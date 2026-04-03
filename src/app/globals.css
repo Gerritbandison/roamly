@@ -1,0 +1,224 @@
+@import "tailwindcss";
+
+:root {
+  --ink: #1a1208;
+  --paper: #faf7f2;
+  --sand: #ede6d8;
+  --amber: #d4873a;
+  --amber-light: #f0d4a8;
+  --rust: #c0502a;
+  --sage: #4a7a56;
+  --muted: #8a7e6f;
+  --white: #ffffff;
+  --card: #ffffff;
+  --overlay: rgba(26, 18, 8, 0.55);
+}
+
+@theme inline {
+  --color-ink: var(--ink);
+  --color-paper: var(--paper);
+  --color-sand: var(--sand);
+  --color-amber: var(--amber);
+  --color-amber-light: var(--amber-light);
+  --color-rust: var(--rust);
+  --color-sage: var(--sage);
+  --color-muted: var(--muted);
+  --font-sans: var(--font-dm-sans);
+  --font-serif: var(--font-playfair);
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-dm-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Animations ───────────────────────────────────────── */
+@keyframes slideDown {
+  from { opacity: 0; transform: translate(-50%, -16px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes dash-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+/* ── Accessibility ───────────────────────────────────── */
+*:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Skip to content link */
+.skip-to-content {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: var(--amber);
+  color: var(--ink);
+  padding: 0.5rem 1rem;
+  z-index: 100;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: 0 0 8px 0;
+  transition: top 0.2s;
+}
+.skip-to-content:focus {
+  top: 0;
+}
+
+/* ── Utility classes ──────────────────────────────────── */
+.animate-fade-up {
+  animation: fadeUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s ease both;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.stagger-1 { animation-delay: 0.05s; }
+.stagger-2 { animation-delay: 0.1s; }
+.stagger-3 { animation-delay: 0.15s; }
+.stagger-4 { animation-delay: 0.2s; }
+.stagger-5 { animation-delay: 0.25s; }
+
+/* ── Scrollbar ────────────────────────────────────────── */
+.overflow-y-auto::-webkit-scrollbar,
+.overflow-x-auto::-webkit-scrollbar { width: 3px; height: 3px; }
+.overflow-y-auto::-webkit-scrollbar-track,
+.overflow-x-auto::-webkit-scrollbar-track { background: transparent; }
+.overflow-y-auto::-webkit-scrollbar-thumb,
+.overflow-x-auto::-webkit-scrollbar-thumb { background: var(--sand); border-radius: 2px; }
+
+/* Hide scrollbar but keep scroll */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ── Leaflet overrides ────────────────────────────────── */
+.leaflet-popup-content-wrapper {
+  background: var(--ink) !important;
+  color: var(--paper) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.35) !important;
+  border: 1px solid rgba(212,135,58,0.3) !important;
+}
+.leaflet-popup-tip {
+  background: var(--ink) !important;
+}
+.leaflet-popup-content {
+  margin: 10px 14px !important;
+  font-family: var(--font-dm-sans), system-ui, sans-serif !important;
+}
+
+/* ── Shimmer loading skeleton ─────────────────────────── */
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--sand) 25%,
+    rgba(255,255,255,0.5) 50%,
+    var(--sand) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+}
+
+/* ── Glass card ───────────────────────────────────────── */
+.glass {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* ── Print styles ─────────────────────────────────────── */
+@media print {
+  @page {
+    margin: 0.6in;
+    size: letter;
+  }
+
+  body {
+    background: white !important;
+    color: var(--ink) !important;
+    font-size: 11pt !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .print\:hidden,
+  .leaflet-container {
+    display: none !important;
+  }
+
+  .print\:block {
+    display: block !important;
+  }
+
+  .print\:h-auto { height: auto !important; }
+  .print\:overflow-visible { overflow: visible !important; }
+  .print\:grid-cols-1 { grid-template-columns: 1fr !important; }
+  .print\:border-0 { border: 0 !important; }
+
+  .break-inside-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Expand all day cards in print mode */
+  .print-expand-all .task-detail,
+  .print-expand-all [class*="space-y"] {
+    max-height: none !important;
+  }
+
+  /* Show all card content regardless of active state */
+  .print-expand-all > div {
+    display: block !important;
+  }
+}
