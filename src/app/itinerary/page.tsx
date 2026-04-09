@@ -12,6 +12,15 @@ import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import Image from "next/image";
 import DayCard from "@/components/DayCard";
+import type { RegenerateModifier } from "@/components/DayCard";
+import ChatDrawer from "@/components/ChatDrawer";
+import PackingList from "@/components/PackingList";
+import BudgetOptimizer from "@/components/BudgetOptimizer";
+import TripSummaryCard from "@/components/TripSummaryCard";
+import TripStats from "@/components/TripStats";
+import WeatherInfo from "@/components/WeatherInfo";
+import CopyItinerary from "@/components/CopyItinerary";
+import FavoritesPanel, { useFavorites } from "@/components/Favorites";
 import ItinerarySkeleton from "@/components/ItinerarySkeleton";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import type { Trip, DayPlan } from "@/types/itinerary";
@@ -145,12 +154,22 @@ function ItineraryContent() {
   const searchParams = useSearchParams();
   const [trip, setTrip] = useState<Trip | null>(null);
   const [tripId, setTripId] = useState<string | null>(null);
+  const favs = useFavorites(tripId || "default");
   const [activeDay, setActiveDay] = useState(1);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [editingDay, setEditingDay] = useState<number | null>(null);
   const [showMap, setShowMap] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const [showPacking, setShowPacking] = useState(false);
+  const [showBudget, setShowBudget] = useState(false);
+  const [showSummary, setShowSummary] = useState(false);
+  const [showStats, setShowStats] = useState(false);
+  const [showWeather, setShowWeather] = useState(false);
+  const [showCopy, setShowCopy] = useState(false);
+  const [showFavorites, setShowFavorites] = useState(false);
+  const [regeneratingDay, setRegeneratingDay] = useState<number | null>(null);
   const [showShareToast, setShowShareToast] = useState(false);
   const [shareToastMessage, setShareToastMessage] = useState("Link copied!");
   const [isPrinting, setIsPrinting] = useState(false);
@@ -308,6 +327,61 @@ function ItineraryContent() {
     }
   };
 
+  const handleTripUpdate = useCallback((updatedTrip: Trip) => {
+    setTrip(updatedTrip);
+    const json = JSON.stringify({ trip: updatedTrip });
+    sessionStorage.setItem("roamly_trip", json);
+    if (tripId) {
+      localStorage.setItem(`roamly_trip_${tripId}`, json);
+    }
+  }, [tripId]);
+
+  const handleRegenerate = useCallback(async (dayNumber: number, modifier: RegenerateModifier) => {
+    if (!trip || regeneratingDay !== null) return;
+    setRegeneratingDay(dayNumber);
+
+    try {
+      const res = await fetch("/api/regenerate-day", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trip, dayNumber, modifier: modifier || undefined }),
+      });
+
+      if (!res.ok || !res.body) throw new Error("Failed to regenerate day");
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+            if (event.type === "complete" && event.day) {
+              const updatedDays = trip.days.map((d) =>
+                d.day === dayNumber ? { ...event.day, day: dayNumber, date: d.date } : d
+              );
+              const updatedTrip = { ...trip, days: updatedDays };
+              handleTripUpdate(updatedTrip);
+            }
+          } catch { /* skip malformed SSE */ }
+        }
+      }
+    } catch (err) {
+      console.error("Regenerate error:", err);
+    } finally {
+      setRegeneratingDay(null);
+    }
+  }, [trip, tripId, regeneratingDay, handleTripUpdate]);
+
   // Scroll day strip to active
   useEffect(() => {
     const el = dayStripRef.current?.querySelector(`[data-day="${activeDay}"]`);
@@ -396,10 +470,45 @@ function ItineraryContent() {
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
                   </svg>
                 </button>
-                <button onClick={handleShare} title="Share" className="p-2 rounded-xl bg-white/15 backdrop-blur-sm text-white hover:bg-white/25 transition">
+                <button onClick={() => setShowSummary(true)} title="Share card" className="p-2 rounded-xl bg-white/15 backdrop-blur-sm text-white hover:bg-white/25 transition">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
                   </svg>
+                </button>
+                <button onClick={() => setShowPacking(true)} title="Packing list" className="p-2 rounded-xl bg-white/15 backdrop-blur-sm text-white hover:bg-white/25 transition">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="5" width="18" height="14" rx="2" /><path d="M8 5V3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" /><line x1="9" y1="10" x2="9" y2="10.01" /><line x1="9" y1="14" x2="9" y2="14.01" /><line x1="12" y1="10" x2="15" y2="10" /><line x1="12" y1="14" x2="15" y2="14" />
+                  </svg>
+                </button>
+                <button onClick={() => setShowBudget(true)} title="Budget optimizer" className="p-2 rounded-xl bg-white/15 backdrop-blur-sm text-white hover:bg-white/25 transition">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                  </svg>
+                </button>
+                <button onClick={() => setShowStats(true)} title="Trip stats" className="p-2 rounded-xl bg-white/15 backdrop-blur-sm text-white hover:bg-white/25 transition">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" />
+                  </svg>
+                </button>
+                <button onClick={() => setShowWeather(true)} title="Weather & climate" className="p-2 rounded-xl bg-white/15 backdrop-blur-sm text-white hover:bg-white/25 transition">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>
+                  </svg>
+                </button>
+                <button onClick={() => setShowCopy(true)} title="Copy itinerary" className="p-2 rounded-xl bg-white/15 backdrop-blur-sm text-white hover:bg-white/25 transition">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                  </svg>
+                </button>
+                <button onClick={() => setShowFavorites(true)} title="My favorites" className="relative p-2 rounded-xl bg-white/15 backdrop-blur-sm text-white hover:bg-white/25 transition">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill={favs.favorites.length > 0 ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                  </svg>
+                  {favs.favorites.length > 0 && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-[var(--amber)] text-[0.5rem] font-bold text-white rounded-full flex items-center justify-center">
+                      {favs.favorites.length}
+                    </span>
+                  )}
                 </button>
               </div>
             </div>
@@ -470,10 +579,22 @@ function ItineraryContent() {
 
         {/* ── Content Area ─────────────────────────── */}
         <div className="flex-1 overflow-hidden relative">
+          {/* Chat toggle button */}
+          <button
+            onClick={() => setShowChat(true)}
+            className="fixed bottom-6 right-4 lg:bottom-8 lg:right-8 z-[1001] bg-[var(--amber)] text-white p-3.5 rounded-2xl shadow-2xl hover:bg-[var(--rust)] transition-colors group"
+            aria-label="Chat with trip assistant"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            <span className="absolute -top-1 -right-1 w-3 h-3 bg-[var(--sage)] rounded-full border-2 border-white animate-pulse" />
+          </button>
+
           {/* Map toggle button (mobile) */}
           <button
             onClick={() => setShowMap(!showMap)}
-            className="lg:hidden fixed bottom-6 right-4 z-[1001] bg-[var(--ink)] text-[var(--paper)] p-3.5 rounded-2xl shadow-2xl border border-[rgba(212,135,58,0.3)] hover:bg-[var(--rust)] transition-colors"
+            className="lg:hidden fixed bottom-6 right-20 z-[1001] bg-[var(--ink)] text-[var(--paper)] p-3.5 rounded-2xl shadow-2xl border border-[rgba(212,135,58,0.3)] hover:bg-[var(--rust)] transition-colors"
             aria-label={showMap ? "Show itinerary" : "Show map"}
           >
             {showMap ? (
@@ -514,7 +635,11 @@ function ItineraryContent() {
                     isActive={day.day === activeDay}
                     onClick={() => setActiveDay(day.day)}
                     onEdit={() => setEditingDay(day.day)}
+                    onRegenerate={handleRegenerate}
+                    isRegenerating={regeneratingDay === day.day}
                     isPrintMode={isPrinting}
+                    onToggleFavorite={favs.toggle}
+                    isFavorite={favs.isFav}
                   />
                 ))}
                 {filteredDays.length === 0 && (
@@ -577,6 +702,59 @@ function ItineraryContent() {
           </div>
         </div>
       </div>
+
+      {/* Chat Drawer */}
+      <ChatDrawer
+        trip={trip}
+        isOpen={showChat}
+        onClose={() => setShowChat(false)}
+        onTripUpdate={handleTripUpdate}
+      />
+
+      {/* Packing List Modal */}
+      <PackingList
+        trip={trip}
+        isOpen={showPacking}
+        onClose={() => setShowPacking(false)}
+      />
+
+      {/* Budget Optimizer Modal */}
+      <BudgetOptimizer
+        trip={trip}
+        isOpen={showBudget}
+        onClose={() => setShowBudget(false)}
+      />
+
+      {/* Trip Summary Card (Share) */}
+      <TripSummaryCard
+        trip={trip}
+        isOpen={showSummary}
+        onClose={() => setShowSummary(false)}
+      />
+
+      {/* Trip Stats */}
+      <TripStats
+        trip={trip}
+        isOpen={showStats}
+        onClose={() => setShowStats(false)}
+      />
+      <WeatherInfo
+        trip={trip}
+        isOpen={showWeather}
+        onClose={() => setShowWeather(false)}
+      />
+      <CopyItinerary
+        trip={trip}
+        isOpen={showCopy}
+        onClose={() => setShowCopy(false)}
+      />
+      <FavoritesPanel
+        trip={trip}
+        favorites={favs.favorites}
+        isOpen={showFavorites}
+        onClose={() => setShowFavorites(false)}
+        onScrollToDay={(day) => setActiveDay(day)}
+      />
     </>
     </ErrorBoundary>
   );

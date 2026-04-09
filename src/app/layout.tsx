@@ -1,4 +1,5 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import ServiceWorkerRegistrar from "@/components/ServiceWorkerRegistrar";
 import { DM_Sans, Playfair_Display } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import ErrorBoundary from "@/components/ErrorBoundary";
@@ -17,10 +18,27 @@ const playfair = Playfair_Display({
   style: ["normal", "italic"],
 });
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  viewportFit: "cover",
+  themeColor: "#10B981",
+};
+
 export const metadata: Metadata = {
   title: "Roamly — AI Trip Planner",
   description:
     "Plan your perfect trip in seconds. Tell us where you want to go and we'll build a complete day-by-day itinerary with local tips, dining, and budget breakdowns.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Roamly",
+  },
+  formatDetection: {
+    telephone: false,
+  },
   openGraph: {
     title: "Roamly — AI Trip Planner",
     description:
@@ -48,6 +66,12 @@ export const metadata: Metadata = {
   metadataBase: new URL(
     process.env.NEXT_PUBLIC_URL || "https://roamly.vercel.app"
   ),
+  icons: {
+    apple: "/icons/apple-touch-icon.png",
+  },
+  other: {
+    "mobile-web-app-capable": "yes",
+  },
 };
 
 export default function RootLayout({
@@ -62,6 +86,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col font-[family-name:var(--font-dm-sans)]">
         <ErrorBoundary>{children}</ErrorBoundary>
+        <ServiceWorkerRegistrar />
         <Analytics />
       </body>
     </html>

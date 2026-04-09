@@ -253,15 +253,32 @@ export default function Home() {
             <h2 className="font-[family-name:var(--font-playfair)] text-2xl font-bold text-[var(--ink)]">Plan Your Trip</h2>
           </div>
 
-          {/* Destination */}
+          {/* Destination (supports multi-city with → separator) */}
           <div>
             <label htmlFor="dest" className="flex items-center gap-1.5 text-[0.68rem] uppercase tracking-[0.14em] text-[var(--muted)] font-medium mb-2">
-              <MapPinIcon /> Destination
+              <MapPinIcon /> Destination{form.destination.includes("→") && <span className="text-[var(--amber)] normal-case tracking-normal ml-1">multi-city</span>}
             </label>
-            <input id="dest" type="text" required placeholder="e.g. Albania, Tokyo, Patagonia..."
+
+            {/* Show stop tags when multi-city */}
+            {form.destination.includes("→") && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {form.destination.split("→").map((stop, i) => (
+                  <span key={i} className="inline-flex items-center gap-1 text-xs bg-[var(--ink)] text-[var(--paper)] px-2.5 py-1 rounded-lg font-medium">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
+                    {stop.trim()}
+                    {i < form.destination.split("→").length - 1 && (
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" strokeWidth="2.5" className="ml-1"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
+                    )}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <input id="dest" type="text" required placeholder="e.g. Tokyo, or Rome → Florence → Amalfi Coast"
               value={form.destination} onChange={(e) => setForm({ ...form, destination: e.target.value })}
               className="w-full px-4 py-3.5 rounded-xl border border-[var(--sand)] bg-[var(--paper)] text-[var(--ink)] placeholder:text-[var(--muted)]/50 focus:outline-none focus:border-[var(--amber)] focus:ring-2 focus:ring-[var(--amber)]/15 transition text-lg font-[family-name:var(--font-playfair)]"
             />
+            <p className="text-[0.6rem] text-[var(--muted)]/60 mt-1.5">Use → between cities for multi-stop trips (e.g. Rome → Florence → Amalfi)</p>
           </div>
 
           {/* Dates */}

@@ -1,16 +1,14 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest } from "next/server";
 
-// ── Validate API key at module load ──────────────────────────────────
-if (!process.env.ANTHROPIC_API_KEY) {
-  throw new Error(
-    "ANTHROPIC_API_KEY is not set. Add it to .env.local or your Vercel environment variables."
-  );
+function getClient() {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new Error(
+      "ANTHROPIC_API_KEY is not set. Add it to .env.local or your Vercel environment variables."
+    );
+  }
+  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 }
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
 
 // ── Route ────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
@@ -42,6 +40,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Detect multi-city trip
+    const isMultiCity = destination.includes("→") || destination.includes("->");
+    const stops = isMultiCity
+      ? destination.split(/→|->/).map((s: string) => s.trim()).filter(Boolean)
+      : [destination];
+
+    const multiCityRules = isMultiCity
+      ? `\n\nMULTI-CITY TRIP RULES (this trip visits ${stops.length} stops: ${stops.join(" → ")}):
+- Allocate days intelligently across stops based on how much each city has to offer
+- Include dedicated TRAVEL DAYS between cities — theme them as "Travel: [City A] → [City B]"
+- On travel days, include the transport mode (train, bus, flight, ferry), duration, cost, and booking tips
+- The region field should reflect which city/stop the traveler is in that day
+- Suggest the optimal route order if the user's order seems suboptimal
+- Include practical transfer info (which train station, which terminal, luggage storage)
+- Travel days can still have activities — e.g. morning in departure city, evening in arrival city`
+      : "";
+
     const systemPrompt = `You are an expert travel planner who creates detailed, opinionated, and genuinely useful day-by-day itineraries. Your style is specific and local — you name actual restaurants, give real prices, mention the best exchange offices, warn about tourist traps, and write with personality. You sound like a well-traveled friend who's been there, not a guidebook.
 
 Key rules:
@@ -51,11 +66,11 @@ Key rules:
 - Each day's costs should itemize accommodation, food, transport, and activities separately
 - The region field groups days geographically (e.g. "Northern Albania", "Central Lisbon")
 - Accommodation should include specific hostel/hotel names with per-night prices
-- Tips should be genuinely useful and specific — not "wear comfortable shoes"
+- Tips should be genuinely useful and specific — not "wear comfortable shoes"${multiCityRules}
 
 You MUST respond with valid JSON only — no markdown, no code fences, no extra text. Just the JSON object.`;
 
-    const userPrompt = `Plan a ${days}-day trip to ${destination}.
+    const userPrompt = `Plan a ${days}-day trip to ${destination}.${isMultiCity ? `\n\nThis is a MULTI-CITY trip visiting: ${stops.join(" → ")}. Distribute the ${days} days across all stops, with travel days between them.` : ""}
 
 Details:
 - Start date: ${startDate}
@@ -134,7 +149,7 @@ Requirements:
             message: `Researching ${destination}...`,
           });
 
-          const stream = anthropic.messages.stream({
+          const stream = getClient().messages.stream({
             model: "claude-sonnet-4-20250514",
             max_tokens: maxTokens,
             messages: [{ role: "user", content: userPrompt }],

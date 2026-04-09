@@ -53,6 +53,8 @@ export default function TripMap({ days, activeDay, onDayClick }: TripMapProps) {
     markersRef.current.forEach((m) => m.remove());
     markersRef.current = [];
     if (routeRef.current) {
+      const segGroup = (routeRef.current as L.Polyline & { _segmentGroup?: L.LayerGroup })._segmentGroup;
+      if (segGroup) segGroup.remove();
       routeRef.current.remove();
       routeRef.current = null;
     }
@@ -66,15 +68,57 @@ export default function TripMap({ days, activeDay, onDayClick }: TripMapProps) {
       }
     });
 
-    // Draw dashed route line
+    // Draw route lines — use different styles for local vs inter-city segments
     if (routePoints.length > 1) {
-      routeRef.current = L.polyline(routePoints, {
-        color: "#c8843a",
-        weight: 2,
-        opacity: 0.4,
-        dashArray: "8, 8",
-        lineCap: "round",
-      }).addTo(map);
+      // Detect multi-city by checking if any consecutive points are far apart
+      const segments: { points: L.LatLngExpression[]; isTravel: boolean }[] = [];
+      let currentSegment: L.LatLngExpression[] = [routePoints[0]];
+      let currentIsTravel = false;
+
+      for (let i = 1; i < routePoints.length; i++) {
+        const [lat1, lng1] = routePoints[i - 1] as [number, number];
+        const [lat2, lng2] = routePoints[i] as [number, number];
+        const dist = Math.sqrt((lat2 - lat1) ** 2 + (lng2 - lng1) ** 2);
+        const isTravel = dist > 0.5; // ~50km+ = inter-city travel
+
+        if (isTravel !== currentIsTravel && currentSegment.length > 0) {
+          segments.push({ points: [...currentSegment], isTravel: currentIsTravel });
+          currentSegment = [routePoints[i - 1]];
+          currentIsTravel = isTravel;
+        }
+        currentSegment.push(routePoints[i]);
+      }
+      if (currentSegment.length > 1) {
+        segments.push({ points: currentSegment, isTravel: currentIsTravel });
+      }
+
+      // If no segments detected, draw single line
+      if (segments.length === 0) {
+        routeRef.current = L.polyline(routePoints, {
+          color: "#c8843a",
+          weight: 2,
+          opacity: 0.4,
+          dashArray: "8, 8",
+          lineCap: "round",
+        }).addTo(map);
+      } else {
+        // Draw each segment with appropriate styling
+        const group = L.layerGroup();
+        segments.forEach((seg) => {
+          L.polyline(seg.points, {
+            color: seg.isTravel ? "#c0502a" : "#c8843a",
+            weight: seg.isTravel ? 3 : 2,
+            opacity: seg.isTravel ? 0.6 : 0.4,
+            dashArray: seg.isTravel ? "12, 6" : "8, 8",
+            lineCap: "round",
+          }).addTo(group);
+        });
+        group.addTo(map);
+        routeRef.current = L.polyline(routePoints, { opacity: 0 }); // keep ref for cleanup
+        routeRef.current.addTo(map);
+        // Store group for cleanup
+        (routeRef.current as L.Polyline & { _segmentGroup?: L.LayerGroup })._segmentGroup = group;
+      }
     }
 
     // Add markers

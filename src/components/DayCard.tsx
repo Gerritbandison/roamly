@@ -1,13 +1,27 @@
 "use client";
 
+import { useState } from "react";
 import type { DayPlan } from "@/types/itinerary";
+
+export type RegenerateModifier = "more adventurous" | "more relaxed" | "more cultural" | "more foodie" | "budget-friendly" | "";
+
+interface FavoriteItem {
+  type: "place" | "food";
+  name: string;
+  day: number;
+  note?: string;
+}
 
 interface DayCardProps {
   day: DayPlan;
   isActive: boolean;
   onClick: () => void;
   onEdit?: () => void;
+  onRegenerate?: (dayNumber: number, modifier: RegenerateModifier) => void;
+  isRegenerating?: boolean;
   isPrintMode?: boolean;
+  onToggleFavorite?: (item: FavoriteItem) => void;
+  isFavorite?: (type: "place" | "food", name: string, day: number) => boolean;
 }
 
 /* ── Time-block icons ─────────────────────────────────── */
@@ -56,9 +70,42 @@ function SectionLabel({ icon, children }: { icon?: React.ReactNode; children: Re
   );
 }
 
-export default function DayCard({ day, isActive, onClick, onEdit, isPrintMode }: DayCardProps) {
+const MODIFIERS: { label: string; value: RegenerateModifier; emoji: string }[] = [
+  { label: "Adventurous", value: "more adventurous", emoji: "🧗" },
+  { label: "Relaxed", value: "more relaxed", emoji: "🧘" },
+  { label: "Cultural", value: "more cultural", emoji: "🏛️" },
+  { label: "Foodie", value: "more foodie", emoji: "🍜" },
+  { label: "Budget", value: "budget-friendly", emoji: "💰" },
+];
+
+const NoteIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" />
+  </svg>
+);
+
+export default function DayCard({ day, isActive, onClick, onEdit, onRegenerate, isRegenerating, isPrintMode, onToggleFavorite, isFavorite }: DayCardProps) {
+  const [showModifiers, setShowModifiers] = useState(false);
+  const [note, setNote] = useState(() => {
+    if (typeof window === "undefined") return "";
+    try {
+      return localStorage.getItem(`roamly_note_${day.day}`) || "";
+    } catch { return ""; }
+  });
+  const [showNoteInput, setShowNoteInput] = useState(false);
   const dayTotal = day.costs?.find((c) => c.item.toLowerCase().includes("total"));
   const expanded = isActive || isPrintMode;
+
+  const saveNote = (val: string) => {
+    setNote(val);
+    try {
+      if (val.trim()) {
+        localStorage.setItem(`roamly_note_${day.day}`, val);
+      } else {
+        localStorage.removeItem(`roamly_note_${day.day}`);
+      }
+    } catch { /* ignore */ }
+  };
 
   return (
     <div
@@ -105,21 +152,85 @@ export default function DayCard({ day, isActive, onClick, onEdit, isPrintMode }:
               {dayTotal.cost}
             </span>
           )}
-          {isActive && onEdit && !isPrintMode && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onEdit(); }}
-              className="p-1.5 rounded-lg text-[var(--muted)] hover:bg-[var(--paper)] hover:text-[var(--amber)] transition print:hidden"
-              title="Edit"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-              </svg>
-            </button>
+          {isActive && !isPrintMode && (
+            <div className="flex items-center gap-1">
+              {onRegenerate && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowModifiers(!showModifiers); }}
+                  disabled={isRegenerating}
+                  className={`p-1.5 rounded-lg transition print:hidden ${
+                    isRegenerating
+                      ? "text-[var(--amber)] animate-spin"
+                      : showModifiers
+                        ? "bg-[var(--amber)]/10 text-[var(--amber)]"
+                        : "text-[var(--muted)] hover:bg-[var(--paper)] hover:text-[var(--amber)]"
+                  }`}
+                  title="Regenerate this day"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                  </svg>
+                </button>
+              )}
+              {onEdit && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onEdit(); }}
+                  className="p-1.5 rounded-lg text-[var(--muted)] hover:bg-[var(--paper)] hover:text-[var(--amber)] transition print:hidden"
+                  title="Edit"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                  </svg>
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>
 
       {/* ── Expanded Content ──────────────────────── */}
+      {/* Regenerate modifier selector */}
+      {showModifiers && isActive && !isPrintMode && onRegenerate && (
+        <div className="px-5 pb-2 print:hidden" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-[var(--paper)] rounded-xl p-3 border border-[var(--amber)]/20">
+            <p className="text-[0.6rem] uppercase tracking-[0.12em] text-[var(--muted)] font-medium mb-2">
+              Regenerate with a vibe
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {MODIFIERS.map((m) => (
+                <button
+                  key={m.value}
+                  disabled={isRegenerating}
+                  onClick={() => { onRegenerate(day.day, m.value); setShowModifiers(false); }}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-[var(--sand)] bg-white text-[var(--ink)] hover:border-[var(--amber)] hover:bg-[var(--amber)]/5 transition disabled:opacity-50"
+                >
+                  {m.emoji} {m.label}
+                </button>
+              ))}
+              <button
+                disabled={isRegenerating}
+                onClick={() => { onRegenerate(day.day, ""); setShowModifiers(false); }}
+                className="text-xs px-3 py-1.5 rounded-lg border border-[var(--amber)] bg-[var(--amber)]/10 text-[var(--amber)] font-medium hover:bg-[var(--amber)] hover:text-white transition disabled:opacity-50"
+              >
+                🎲 Surprise me
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Regenerating overlay */}
+      {isRegenerating && isActive && (
+        <div className="px-5 pb-3 print:hidden">
+          <div className="bg-[var(--amber)]/5 border border-[var(--amber)]/20 rounded-xl p-4 flex items-center gap-3">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-spin flex-shrink-0">
+              <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+            <span className="text-sm text-[var(--ink)]">Reimagining this day...</span>
+          </div>
+        </div>
+      )}
+
       {expanded && (
         <div className="px-5 pb-5 space-y-4">
           {/* Time blocks */}
@@ -145,7 +256,7 @@ export default function DayCard({ day, isActive, onClick, onEdit, isPrintMode }:
               <SectionLabel icon={<UtensilsIcon />}>Where to Eat</SectionLabel>
               <div className="mt-2 space-y-2">
                 {day.food.map((f, i) => (
-                  <div key={i} className="flex items-start gap-2 text-sm">
+                  <div key={i} className="flex items-start gap-2 text-sm group/food">
                     <span className={`font-medium flex-shrink-0 ${f.must_try ? "text-[var(--rust)]" : "text-[var(--ink)]"}`}>
                       {f.name}
                       {f.must_try && (
@@ -154,7 +265,18 @@ export default function DayCard({ day, isActive, onClick, onEdit, isPrintMode }:
                         </span>
                       )}
                     </span>
-                    <span className="text-[var(--muted)] text-[0.8rem] leading-relaxed">{f.note}</span>
+                    <span className="text-[var(--muted)] text-[0.8rem] leading-relaxed flex-1">{f.note}</span>
+                    {onToggleFavorite && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onToggleFavorite({ type: "food", name: f.name, day: day.day, note: f.note }); }}
+                        className="opacity-0 group-hover/food:opacity-100 transition p-0.5 flex-shrink-0"
+                        title={isFavorite?.("food", f.name, day.day) ? "Remove from favorites" : "Add to favorites"}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill={isFavorite?.("food", f.name, day.day) ? "var(--amber)" : "none"} stroke="var(--amber)" strokeWidth="2">
+                          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                        </svg>
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -230,24 +352,93 @@ export default function DayCard({ day, isActive, onClick, onEdit, isPrintMode }:
               }>Places</SectionLabel>
             <div className="flex flex-wrap gap-1.5 mt-2">
               {day.locations.map((loc, i) => (
-                <a
-                  key={i}
-                  href={`https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  className="inline-flex items-center gap-1 text-xs bg-[var(--paper)] text-[var(--muted)] px-2.5 py-1.5 rounded-lg hover:bg-[var(--amber)] hover:text-white transition"
-                  title={`${loc.name} on Google Maps`}
-                >
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
-                  </svg>
-                  {loc.name}
-                </a>
+                <span key={i} className="inline-flex items-center gap-1 text-xs bg-[var(--paper)] text-[var(--muted)] rounded-lg group/loc">
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 hover:text-[var(--amber)] transition"
+                    title={`${loc.name} on Google Maps`}
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
+                    </svg>
+                    {loc.name}
+                  </a>
+                  {onToggleFavorite && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onToggleFavorite({ type: "place", name: loc.name, day: day.day, note: loc.notes }); }}
+                      className="pr-2 opacity-0 group-hover/loc:opacity-100 transition"
+                      title={isFavorite?.("place", loc.name, day.day) ? "Remove from favorites" : "Add to favorites"}
+                    >
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill={isFavorite?.("place", loc.name, day.day) ? "var(--amber)" : "none"} stroke="var(--amber)" strokeWidth="2">
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                      </svg>
+                    </button>
+                  )}
+                </span>
               ))}
             </div>
             </div>
           )}
+
+          {/* Personal Note */}
+          <div className="print:hidden" onClick={(e) => e.stopPropagation()}>
+            {(note || showNoteInput) ? (
+              <div className="bg-[var(--paper)] rounded-xl border border-dashed border-[var(--sand)] p-3">
+                <div className="flex items-center justify-between mb-1.5">
+                  <SectionLabel icon={<NoteIcon />}>
+                    <span className="text-[var(--sage)]">My Note</span>
+                  </SectionLabel>
+                  {note && !showNoteInput && (
+                    <button
+                      onClick={() => setShowNoteInput(true)}
+                      className="text-[0.55rem] text-[var(--muted)] hover:text-[var(--amber)] transition"
+                    >
+                      edit
+                    </button>
+                  )}
+                </div>
+                {showNoteInput ? (
+                  <div className="space-y-2">
+                    <textarea
+                      value={note}
+                      onChange={(e) => setNote(e.target.value)}
+                      placeholder="Remind myself to..."
+                      rows={2}
+                      autoFocus
+                      className="w-full text-sm text-[var(--ink)] bg-white rounded-lg border border-[var(--sand)] px-3 py-2 resize-none focus:outline-none focus:border-[var(--amber)] transition placeholder:text-[var(--muted)]/40"
+                    />
+                    <div className="flex gap-2 justify-end">
+                      <button
+                        onClick={() => { saveNote(""); setShowNoteInput(false); }}
+                        className="text-[0.65rem] text-[var(--muted)] hover:text-red-500 transition px-2 py-1"
+                      >
+                        Delete
+                      </button>
+                      <button
+                        onClick={() => { saveNote(note); setShowNoteInput(false); }}
+                        className="text-[0.65rem] bg-[var(--sage)] text-white px-3 py-1 rounded-lg hover:bg-[var(--sage)]/80 transition font-medium"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-[var(--ink)]/70 leading-relaxed whitespace-pre-wrap">{note}</p>
+                )}
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowNoteInput(true)}
+                className="w-full text-left text-xs text-[var(--muted)]/50 hover:text-[var(--sage)] py-2 flex items-center gap-1.5 transition"
+              >
+                <NoteIcon />
+                Add a personal note...
+              </button>
+            )}
+          </div>
 
           {/* Verification note */}
           <p className="text-[0.58rem] text-[var(--muted)]/50 italic text-center print:hidden">
