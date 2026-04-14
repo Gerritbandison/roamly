@@ -1,15 +1,19 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest } from "next/server";
-
-function getClient() {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error("ANTHROPIC_API_KEY is not set.");
-  }
-  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-}
+import { getAnthropicClient } from "@/lib/anthropic";
+import { rateLimit } from "@/lib/rateLimit";
 
 export async function POST(req: NextRequest) {
   try {
+    // Rate limit: 10 regenerations per minute per IP
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "127.0.0.1";
+    const rl = rateLimit(`regenerate:${ip}`, 10, 60_000);
+    if (!rl.allowed) {
+      return new Response(
+        JSON.stringify({ error: "Too many regeneration requests. Please wait a moment." }),
+        { status: 429, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
     const body = await req.json();
     const { trip, dayNumber, modifier } = body;
 
@@ -75,7 +79,7 @@ Now regenerate Day ${dayNumber} (currently: "${currentDay.theme}"). Return ONLY 
         try {
           send({ type: "status", message: "Reimagining your day..." });
 
-          const stream = getClient().messages.stream({
+          const stream = getAnthropicClient().messages.stream({
             model: "claude-sonnet-4-20250514",
             max_tokens: 4096,
             messages: [{ role: "user", content: userMessage }],

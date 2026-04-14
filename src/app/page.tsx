@@ -179,12 +179,14 @@ export default function Home() {
     localStorage.removeItem(`roamly_trip_${id}`);
   };
 
+  const today = new Date().toISOString().split("T")[0];
+
   const tripDays = form.startDate && form.endDate
     ? Math.ceil((new Date(form.endDate).getTime() - new Date(form.startDate).getTime()) / 86400000) + 1
     : 0;
 
   return (
-    <main className="flex-1 flex flex-col">
+    <div className="flex-1 flex flex-col">
       {error && (
         <Toast
           message={error}
@@ -285,7 +287,7 @@ export default function Home() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label htmlFor="sd" className="flex items-center gap-1.5 text-[0.68rem] uppercase tracking-[0.14em] text-[var(--muted)] font-medium mb-2"><CalendarIcon /> Start</label>
-              <input id="sd" type="date" required value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })}
+              <input id="sd" type="date" required min={today} value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })}
                 className="w-full px-4 py-3 rounded-xl border border-[var(--sand)] bg-[var(--paper)] text-[var(--ink)] focus:outline-none focus:border-[var(--amber)] focus:ring-2 focus:ring-[var(--amber)]/15 transition" />
             </div>
             <div>
@@ -416,6 +418,6 @@ export default function Home() {
         </p>
         <p className="text-[0.65rem] text-[var(--muted)]">Built with AI · Prices and details are estimates</p>
       </footer>
-    </main>
+    </div>
   );
 }

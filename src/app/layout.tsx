@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import ServiceWorkerRegistrar from "@/components/ServiceWorkerRegistrar";
+import ThemeToggle from "@/components/ThemeToggle";
 import { DM_Sans, Playfair_Display } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import ErrorBoundary from "@/components/ErrorBoundary";
@@ -23,7 +24,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   viewportFit: "cover",
-  themeColor: "#10B981",
+  themeColor: "#d4873a",
 };
 
 export const metadata: Metadata = {
@@ -85,7 +86,9 @@ export default function RootLayout({
       className={`${dmSans.variable} ${playfair.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col font-[family-name:var(--font-dm-sans)]">
-        <ErrorBoundary>{children}</ErrorBoundary>
+        <a href="#main-content" className="skip-to-content">Skip to content</a>
+        <ErrorBoundary><main id="main-content">{children}</main></ErrorBoundary>
+        <ThemeToggle />
         <ServiceWorkerRegistrar />
         <Analytics />
       </body>

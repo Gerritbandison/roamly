@@ -1,24 +1,40 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest } from "next/server";
+import { z } from "zod";
+import { getAnthropicClient } from "@/lib/anthropic";
+import { rateLimit } from "@/lib/rateLimit";
 
-function getClient() {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error("ANTHROPIC_API_KEY is not set.");
-  }
-  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-}
+const ChatSchema = z.object({
+  message: z.string().min(1).max(2000),
+  trip: z.object({}).passthrough(),
+  history: z.array(z.object({
+    role: z.enum(["user", "assistant"]),
+    content: z.string(),
+  })).optional().default([]),
+});
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { message, trip, history } = body;
-
-    if (!message || !trip) {
+    // Rate limit: 20 chat messages per minute per IP
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "127.0.0.1";
+    const rl = rateLimit(`chat:${ip}`, 20, 60_000);
+    if (!rl.allowed) {
       return new Response(
-        JSON.stringify({ error: "Message and trip data are required" }),
+        JSON.stringify({ error: "Too many messages. Please slow down." }),
+        { status: 429, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    const body = await req.json();
+    const parsed = ChatSchema.safeParse(body);
+
+    if (!parsed.success) {
+      return new Response(
+        JSON.stringify({ error: parsed.error.issues[0]?.message ?? "Invalid input" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
+
+    const { message, trip, history } = parsed.data;
 
     const systemPrompt = `You are Roamly's trip planning assistant. The user has an existing itinerary and wants to modify or ask questions about it. You have two modes:
 
@@ -80,7 +96,7 @@ Key rules:
         };
 
         try {
-          const stream = getClient().messages.stream({
+          const stream = getAnthropicClient().messages.stream({
             model: "claude-sonnet-4-20250514",
             max_tokens: 8192,
             messages,

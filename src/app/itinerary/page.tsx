@@ -632,6 +632,7 @@ function ItineraryContent() {
                   <DayCard
                     key={day.day}
                     day={day}
+                    tripId={tripId || undefined}
                     isActive={day.day === activeDay}
                     onClick={() => setActiveDay(day.day)}
                     onEdit={() => setEditingDay(day.day)}

@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 interface SavedTrip {
   id: string;
   destination: string;
@@ -15,6 +17,8 @@ interface SavedTripsProps {
 }
 
 export default function SavedTrips({ trips, onLoad, onDelete }: SavedTripsProps) {
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+
   if (trips.length === 0) return null;
 
   return (
@@ -27,7 +31,7 @@ export default function SavedTrips({ trips, onLoad, onDelete }: SavedTripsProps)
         <div className="space-y-2.5">
           {trips.map((t) => (
             <div key={t.id} onClick={() => onLoad(t)}
-              className="bg-white border border-[var(--sand)]/60 rounded-2xl px-5 py-4 flex items-center gap-4 cursor-pointer hover:border-[var(--amber)] hover:shadow-md transition-all group">
+              className="bg-[var(--card)] border border-[var(--sand)]/60 rounded-2xl px-5 py-4 flex items-center gap-4 cursor-pointer hover:border-[var(--amber)] hover:shadow-md transition-all group">
               <div className="w-10 h-10 rounded-xl bg-[var(--paper)] flex items-center justify-center text-lg font-[family-name:var(--font-playfair)] font-bold text-[var(--amber)] group-hover:bg-[var(--amber)] group-hover:text-white transition-colors">
                 {t.duration}
               </div>
@@ -35,8 +39,30 @@ export default function SavedTrips({ trips, onLoad, onDelete }: SavedTripsProps)
                 <h4 className="font-medium text-[var(--ink)] truncate group-hover:text-[var(--amber)] transition">{t.destination}</h4>
                 <p className="text-[0.7rem] text-[var(--muted)]">{t.duration} days · {new Date(t.createdAt).toLocaleDateString()}</p>
               </div>
-              <button onClick={(e) => { e.stopPropagation(); onDelete(t.id); }}
-                className="text-[var(--muted)] hover:text-[var(--rust)] transition text-lg px-1" aria-label="Delete trip">&times;</button>
+              {confirmId === t.id ? (
+                <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    onClick={() => { onDelete(t.id); setConfirmId(null); }}
+                    className="text-xs px-2.5 py-1 rounded-lg bg-[var(--rust)] text-white font-medium hover:bg-[var(--rust)]/80 transition"
+                  >
+                    Delete
+                  </button>
+                  <button
+                    onClick={() => setConfirmId(null)}
+                    className="text-xs px-2.5 py-1 rounded-lg border border-[var(--sand)] text-[var(--muted)] hover:border-[var(--ink)] transition"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setConfirmId(t.id); }}
+                  className="text-[var(--muted)] hover:text-[var(--rust)] transition text-lg px-1"
+                  aria-label={`Delete ${t.destination} trip`}
+                >
+                  &times;
+                </button>
+              )}
             </div>
           ))}
         </div>

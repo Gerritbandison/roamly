@@ -14,6 +14,7 @@ interface FavoriteItem {
 
 interface DayCardProps {
   day: DayPlan;
+  tripId?: string;
   isActive: boolean;
   onClick: () => void;
   onEdit?: () => void;
@@ -84,12 +85,13 @@ const NoteIcon = () => (
   </svg>
 );
 
-export default function DayCard({ day, isActive, onClick, onEdit, onRegenerate, isRegenerating, isPrintMode, onToggleFavorite, isFavorite }: DayCardProps) {
+export default function DayCard({ day, tripId, isActive, onClick, onEdit, onRegenerate, isRegenerating, isPrintMode, onToggleFavorite, isFavorite }: DayCardProps) {
+  const noteKey = tripId ? `roamly_note_${tripId}_${day.day}` : `roamly_note_${day.day}`;
   const [showModifiers, setShowModifiers] = useState(false);
   const [note, setNote] = useState(() => {
     if (typeof window === "undefined") return "";
     try {
-      return localStorage.getItem(`roamly_note_${day.day}`) || "";
+      return localStorage.getItem(noteKey) || "";
     } catch { return ""; }
   });
   const [showNoteInput, setShowNoteInput] = useState(false);
@@ -100,9 +102,9 @@ export default function DayCard({ day, isActive, onClick, onEdit, onRegenerate, 
     setNote(val);
     try {
       if (val.trim()) {
-        localStorage.setItem(`roamly_note_${day.day}`, val);
+        localStorage.setItem(noteKey, val);
       } else {
-        localStorage.removeItem(`roamly_note_${day.day}`);
+        localStorage.removeItem(noteKey);
       }
     } catch { /* ignore */ }
   };

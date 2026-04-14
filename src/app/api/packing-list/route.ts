@@ -1,15 +1,19 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest } from "next/server";
-
-function getClient() {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error("ANTHROPIC_API_KEY is not set.");
-  }
-  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-}
+import { getAnthropicClient } from "@/lib/anthropic";
+import { rateLimit } from "@/lib/rateLimit";
 
 export async function POST(req: NextRequest) {
   try {
+    // Rate limit: 10 packing list requests per minute per IP
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "127.0.0.1";
+    const rl = rateLimit(`packing:${ip}`, 10, 60_000);
+    if (!rl.allowed) {
+      return new Response(
+        JSON.stringify({ error: "Too many requests. Please wait a moment." }),
+        { status: 429, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
     const body = await req.json();
     const { trip } = body;
 
@@ -64,7 +68,7 @@ Rules:
 - Keep item names concise (2-5 words each)
 - Return ONLY the JSON — no markdown, no explanation`;
 
-    const response = await getClient().messages.create({
+    const response = await getAnthropicClient().messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 2048,
       messages: [{ role: "user", content: prompt }],

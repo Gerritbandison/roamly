@@ -1,30 +1,43 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest } from "next/server";
+import { z } from "zod";
+import { getAnthropicClient } from "@/lib/anthropic";
+import { rateLimit } from "@/lib/rateLimit";
 
-function getClient() {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error(
-      "ANTHROPIC_API_KEY is not set. Add it to .env.local or your Vercel environment variables."
-    );
-  }
-  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-}
+const GenerateSchema = z.object({
+  destination: z.string().min(1).max(200),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  travelers: z.coerce.number().int().min(1).max(20),
+  budget: z.enum(["backpacker", "mid-range", "luxury"]),
+  interests: z.string().max(500).optional().default(""),
+});
 
 // ── Route ────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { destination, startDate, endDate, travelers, budget, interests } =
-      body;
+    // Rate limit: 5 generate requests per minute per IP
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "127.0.0.1";
+    const rl = rateLimit(`generate:${ip}`, 5, 60_000);
+    if (!rl.allowed) {
+      return new Response(
+        JSON.stringify({ error: "Too many requests. Please wait a moment before generating another trip." }),
+        { status: 429, headers: { "Content-Type": "application/json" } }
+      );
+    }
 
-    if (!destination || !startDate || !endDate) {
+    const body = await req.json();
+    const parsed = GenerateSchema.safeParse(body);
+
+    if (!parsed.success) {
       return new Response(
         JSON.stringify({
-          error: "Destination, start date, and end date are required",
+          error: parsed.error.issues[0]?.message ?? "Invalid input",
         }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
+
+    const { destination, startDate, endDate, travelers, budget, interests } = parsed.data;
 
     const start = new Date(startDate);
     const end = new Date(endDate);
@@ -149,7 +162,7 @@ Requirements:
             message: `Researching ${destination}...`,
           });
 
-          const stream = getClient().messages.stream({
+          const stream = getAnthropicClient().messages.stream({
             model: "claude-sonnet-4-20250514",
             max_tokens: maxTokens,
             messages: [{ role: "user", content: userPrompt }],
