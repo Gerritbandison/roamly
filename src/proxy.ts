@@ -1,10 +1,21 @@
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
 
-// Next.js 16: middleware.ts renamed to proxy.ts, export renamed to `proxy`
+// Routes that don't require authentication
+const isPublicRoute = createRouteMatcher([
+  "/",
+  "/sign-in(.*)",
+  "/sign-up(.*)",
+  "/share(.*)",
+  "/s/(.*)",
+  "/api/weather",
+  "/api/currency",
+  "/api/stripe/webhook",
+]);
 
+// CORS config
 const CORS_HEADERS = {
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
   "Access-Control-Max-Age": "86400",
 };
@@ -16,16 +27,22 @@ const ALLOWED_ORIGINS = [
 ];
 
 function isAllowedOrigin(origin: string) {
-  if (!origin) return true; // same-origin requests have no Origin header
+  if (!origin) return true;
   return ALLOWED_ORIGINS.some((o) => origin === o);
 }
 
-export function proxy(request: NextRequest) {
+export const proxy = clerkMiddleware(async (auth, request) => {
+  // Protect non-public routes
+  if (!isPublicRoute(request)) {
+    await auth.protect();
+  }
+
   const origin = request.headers.get("origin") ?? "";
   const allowed = isAllowedOrigin(origin);
+  const isApi = request.nextUrl.pathname.startsWith("/api/");
 
-  // Handle CORS preflight
-  if (request.method === "OPTIONS") {
+  // Handle CORS preflight for API routes
+  if (isApi && request.method === "OPTIONS") {
     return NextResponse.json(
       {},
       {
@@ -41,16 +58,21 @@ export function proxy(request: NextRequest) {
 
   const response = NextResponse.next();
 
-  if (allowed && origin) {
+  // Add CORS headers for API routes
+  if (isApi && allowed && origin) {
     response.headers.set("Access-Control-Allow-Origin", origin);
-  }
-  for (const [k, v] of Object.entries(CORS_HEADERS)) {
-    response.headers.set(k, v);
+    for (const [k, v] of Object.entries(CORS_HEADERS)) {
+      response.headers.set(k, v);
+    }
   }
 
   return response;
-}
+});
 
 export const config = {
-  matcher: "/api/:path*",
+  matcher: [
+    // Match all routes except static files and Next.js internals
+    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    "/(api|trpc)(.*)",
+  ],
 };

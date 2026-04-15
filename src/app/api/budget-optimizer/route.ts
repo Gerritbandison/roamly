@@ -1,5 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest } from "next/server";
+import { auth } from "@clerk/nextjs/server";
+import { env } from "@/lib/env";
 
 function getClient() {
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -10,6 +12,14 @@ function getClient() {
 
 export async function POST(req: NextRequest) {
   try {
+    const { userId } = await auth();
+    if (!userId) {
+      return new Response(
+        JSON.stringify({ error: "Sign in to use the budget optimizer" }),
+        { status: 401, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
     const body = await req.json();
     const { trip, priorities } = body;
 
@@ -106,7 +116,7 @@ Rules:
 - Return ONLY the JSON — no markdown, no explanation`;
 
     const response = await getClient().messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: env.AI_MODEL,
       max_tokens: 2048,
       messages: [{ role: "user", content: prompt }],
       system:

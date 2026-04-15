@@ -7,6 +7,10 @@ import Toast from "@/components/Toast";
 import StreamingOverlay from "@/components/StreamingOverlay";
 import SampleTrips from "@/components/SampleTrips";
 import SavedTrips, { type SavedTrip } from "@/components/SavedTrips";
+import UsageBadge from "@/components/UsageBadge";
+import UpgradeModal from "@/components/UpgradeModal";
+import MigrationBanner from "@/components/MigrationBanner";
+import { useAuth } from "@clerk/nextjs";
 
 /* ── Constants ───────────────────────────────────────── */
 const VIBES = [
@@ -65,6 +69,7 @@ const SparkleIcon = () => (
 /* ── Page ─────────────────────────────────────────────── */
 export default function Home() {
   const router = useRouter();
+  const { isSignedIn } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedVibes, setSelectedVibes] = useState<string[]>([]);
@@ -72,6 +77,8 @@ export default function Home() {
   const [streamMessage, setStreamMessage] = useState("");
   const [savedTrips, setSavedTrips] = useState<SavedTrip[]>([]);
   const [lastPayload, setLastPayload] = useState<Record<string, unknown> | null>(null);
+  const [showUpgrade, setShowUpgrade] = useState(false);
+  const [upgradeInfo, setUpgradeInfo] = useState<{ current?: number; limit?: number; resetsAt?: string }>({});
   const [form, setForm] = useState<TripFormData>({
     destination: "",
     startDate: "",
@@ -100,22 +107,41 @@ export default function Home() {
     if (!form.destination.trim()) return "Please enter a destination.";
     if (!form.startDate) return "Please select a start date.";
     if (!form.endDate) return "Please select an end date.";
-    const s = new Date(form.startDate), e = new Date(form.endDate);
+    // Append T00:00:00 to avoid UTC parsing (off-by-one in western timezones)
+    const s = new Date(form.startDate + "T00:00:00"), e = new Date(form.endDate + "T00:00:00");
     if (e < s) return "End date must be after start date.";
     const d = Math.ceil((e.getTime() - s.getTime()) / 86400000) + 1;
     if (d > 21) return "Maximum trip length is 21 days.";
     return null;
   };
 
-  const submitTrip = async (payload: Record<string, unknown>) => {
+  const submitTrip = async (payload: Record<string, unknown>, attempt = 0) => {
+    const MAX_RETRIES = 2;
     setLoading(true);
     setStreamProgress(0);
-    setStreamMessage("Connecting...");
+    setStreamMessage(attempt > 0 ? `Retrying (attempt ${attempt + 1})...` : "Connecting...");
     setLastPayload(payload);
 
     try {
       const res = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || "Failed to generate itinerary"); }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const status = res.status;
+        // Show upgrade modal on usage limit
+        if (status === 429 && data.code === "USAGE_LIMIT") {
+          setUpgradeInfo({ current: data.current, limit: data.limit, resetsAt: data.resetsAt });
+          setShowUpgrade(true);
+          return;
+        }
+        // Auto-retry on 500/502/503/504 with exponential backoff
+        if (status >= 500 && attempt < MAX_RETRIES) {
+          const delay = Math.min(1000 * Math.pow(2, attempt), 4000);
+          setStreamMessage(`Server hiccup — retrying in ${delay / 1000}s...`);
+          await new Promise((r) => setTimeout(r, delay));
+          return submitTrip(payload, attempt + 1);
+        }
+        throw new Error(data.error || "Failed to generate itinerary");
+      }
 
       const reader = res.body?.getReader();
       if (!reader) throw new Error("No response stream");
@@ -137,13 +163,52 @@ export default function Home() {
               setStreamProgress(100);
               setStreamMessage("Ready!");
               sessionStorage.setItem("roamly_trip", JSON.stringify(event.data));
-              const entry: SavedTrip = { id: Date.now().toString(36), destination: event.data.trip.destination, duration: event.data.trip.duration_days, budget: event.data.trip.practical_info.budget_estimate, createdAt: new Date().toISOString() };
+              let entryId = Date.now().toString(36);
+
+              // Save to DB if signed in
+              if (isSignedIn) {
+                try {
+                  const tripData = event.data.trip;
+                  const days = Math.ceil((new Date(payload.endDate as string).getTime() - new Date(payload.startDate as string).getTime()) / 86400000) + 1;
+                  const dbRes = await fetch("/api/trips", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      formData: {
+                        destination: payload.destination,
+                        durationDays: days,
+                        budget: payload.budget,
+                        startDate: payload.startDate,
+                        endDate: payload.endDate,
+                        travelers: payload.travelers,
+                        interests: payload.interests,
+                      },
+                      tripData,
+                    }),
+                  });
+                  if (dbRes.ok) {
+                    const { trip: dbTrip } = await dbRes.json();
+                    entryId = dbTrip.id;
+                  }
+                } catch { /* DB save failed — continue with local-only */ }
+              }
+
+              const entry: SavedTrip = { id: entryId, destination: event.data.trip.destination, duration: event.data.trip.duration_days, budget: event.data.trip.practical_info.budget_estimate, createdAt: new Date().toISOString() };
               const hist = [entry, ...savedTrips].slice(0, 10);
               localStorage.setItem("roamly_history", JSON.stringify(hist));
               localStorage.setItem(`roamly_trip_${entry.id}`, JSON.stringify(event.data));
               setTimeout(() => router.push(`/itinerary?id=${entry.id}`), 350);
               return;
-            } else if (event.type === "error") { throw new Error(event.message); }
+            } else if (event.type === "error") {
+              // Auto-retry on stream errors
+              if (attempt < MAX_RETRIES) {
+                const delay = Math.min(1000 * Math.pow(2, attempt), 4000);
+                setStreamMessage(`Something went wrong — retrying in ${delay / 1000}s...`);
+                await new Promise((r) => setTimeout(r, delay));
+                return submitTrip(payload, attempt + 1);
+              }
+              throw new Error(event.message);
+            }
           } catch (pe) { if (pe instanceof Error && pe.message.includes("Failed")) throw pe; }
         }
       }
@@ -191,6 +256,13 @@ export default function Home() {
           onClose={() => setError(null)}
         />
       )}
+      <UpgradeModal
+        isOpen={showUpgrade}
+        onClose={() => setShowUpgrade(false)}
+        current={upgradeInfo.current}
+        limit={upgradeInfo.limit}
+        resetsAt={upgradeInfo.resetsAt}
+      />
       {/* Retry banner when there was an error and we have a payload to retry */}
       {error && lastPayload && !loading && (
         <div className="fixed top-16 left-1/2 -translate-x-1/2 z-40 animate-[slideDown_0.3s_ease]">
@@ -209,14 +281,23 @@ export default function Home() {
 
       {/* ── Hero ──────────────────────────────────────── */}
       <section className="relative min-h-[85vh] flex flex-col items-center justify-center px-6 overflow-hidden">
-        <div className="absolute inset-0 -z-10 bg-gradient-to-b from-[#ede4d0] via-[var(--paper)] to-white" />
-        <div className="absolute top-10 right-[8%] w-[320px] h-[320px] rounded-full bg-[var(--amber)] opacity-[0.07] blur-[80px] -z-10" />
-        <div className="absolute bottom-24 left-[3%] w-[240px] h-[240px] rounded-full bg-[var(--rust)] opacity-[0.05] blur-[60px] -z-10" />
+        <div className="absolute inset-0 -z-10 bg-gradient-to-b from-[var(--hero-from)] via-[var(--hero-via)] to-[var(--hero-to)]" />
+        <div className="absolute top-10 right-[8%] w-[320px] h-[320px] rounded-full bg-[var(--amber)] opacity-[0.07] blur-[80px] -z-10 animate-[float_8s_ease-in-out_infinite]" />
+        <div className="absolute bottom-24 left-[3%] w-[240px] h-[240px] rounded-full bg-[var(--rust)] opacity-[0.05] blur-[60px] -z-10 animate-[float_10s_ease-in-out_2s_infinite]" />
+        <div className="absolute top-1/3 left-[15%] w-[180px] h-[180px] rounded-full bg-[var(--sage)] opacity-[0.04] blur-[70px] -z-10 animate-[float_12s_ease-in-out_4s_infinite]" />
+
+        {/* Floating decorative icons */}
+        <div className="absolute inset-0 -z-5 pointer-events-none overflow-hidden">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" strokeWidth="1.5" className="absolute top-[15%] left-[12%] opacity-[0.12] animate-[float_6s_ease-in-out_infinite]"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--rust)" strokeWidth="1.5" className="absolute top-[22%] right-[18%] opacity-[0.10] animate-[float_7s_ease-in-out_1s_infinite]"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--sage)" strokeWidth="1.5" className="absolute bottom-[30%] right-[10%] opacity-[0.10] animate-[float_8s_ease-in-out_3s_infinite]"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/></svg>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="1.5" className="absolute bottom-[25%] left-[8%] opacity-[0.08] animate-[float_9s_ease-in-out_2s_infinite]"><path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>
+        </div>
 
         <div className="animate-fade-up max-w-2xl text-center">
           {/* Logo plane */}
           <div className="flex items-center justify-center gap-2 mb-6">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="animate-[float_3s_ease-in-out_infinite]">
               <path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z" />
             </svg>
             <span className="text-[0.7rem] uppercase tracking-[0.3em] text-[var(--muted)] font-medium">AI-Powered Trip Planning</span>
@@ -225,24 +306,39 @@ export default function Home() {
           <h1 className="font-[family-name:var(--font-playfair)] text-6xl sm:text-7xl md:text-[5.5rem] font-bold text-[var(--ink)] mb-5 tracking-tight leading-[0.92]">
             Roam<span className="italic text-[var(--amber)]">ly</span>
           </h1>
-          <p className="text-lg md:text-xl text-[var(--muted)] max-w-lg mx-auto leading-relaxed mb-10">
+          <p className="text-lg md:text-xl text-[var(--muted)] max-w-lg mx-auto leading-relaxed mb-4">
             Tell us where. We&apos;ll plan every detail — activities, restaurants,
             costs, local tips — in seconds.
           </p>
 
-          <a href="#plan-form" className="inline-flex items-center gap-2.5 px-8 py-3.5 rounded-full bg-[var(--ink)] text-[var(--paper)] font-semibold text-base hover:bg-[var(--rust)] transition-colors shadow-lg shadow-[rgba(26,18,8,0.15)]">
+          {/* Social proof */}
+          <div className="flex items-center justify-center gap-4 mb-10 text-[0.7rem] text-[var(--muted)]">
+            <span className="flex items-center gap-1">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="var(--amber)" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              AI-powered itineraries
+            </span>
+            <span className="text-[var(--sand)]">|</span>
+            <span>100% free</span>
+            <span className="text-[var(--sand)]">|</span>
+            <span>No signup required</span>
+          </div>
+
+          <a href="#plan-form" className="group inline-flex items-center gap-2.5 px-8 py-3.5 rounded-full bg-[var(--ink)] text-[var(--paper)] font-semibold text-base hover:bg-[var(--rust)] transition-all shadow-lg shadow-[rgba(26,18,8,0.15)] hover:shadow-xl hover:-translate-y-0.5">
             Start Planning
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M19 12l-7 7-7-7" /></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="transition-transform group-hover:translate-y-0.5"><path d="M12 5v14M19 12l-7 7-7-7" /></svg>
           </a>
         </div>
       </section>
+
+      {/* ── Migration Banner (shown once after first sign-in) ── */}
+      {isSignedIn && <MigrationBanner />}
 
       {/* ── Destination Cards ─────────────────────────── */}
       <SampleTrips onSelect={handleSampleSelect} />
 
       {/* ── Form Section ─────────────────────────────── */}
-      <section id="plan-form" className="flex justify-center px-4 py-16 md:py-20 scroll-mt-8 bg-gradient-to-b from-white to-[var(--paper)]">
-        <form onSubmit={handleSubmit} className="w-full max-w-xl bg-white rounded-3xl shadow-xl shadow-[rgba(26,18,8,0.06)] border border-[var(--sand)]/60 p-7 md:p-10 space-y-6">
+      <section id="plan-form" className="flex justify-center px-4 py-16 md:py-20 scroll-mt-8 bg-gradient-to-b from-[var(--section-bg)] to-[var(--paper)]">
+        <form onSubmit={handleSubmit} className="w-full max-w-xl bg-[var(--form-bg)] rounded-3xl shadow-xl shadow-[rgba(26,18,8,0.06)] border border-[var(--sand)]/60 p-7 md:p-10 space-y-6">
           <div className="text-center mb-4">
             <div className="inline-flex items-center gap-2 bg-[var(--paper)] rounded-full px-4 py-1.5 mb-4">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -295,10 +391,22 @@ export default function Home() {
             </div>
           </div>
           {tripDays > 0 && (
-            <p className="text-xs text-[var(--muted)] -mt-3">
-              {tripDays} day{tripDays !== 1 ? "s" : ""}
-              {tripDays > 21 && <span className="text-[var(--rust)] ml-1">— max 21</span>}
-            </p>
+            <div className={`-mt-2 px-3 py-2 rounded-xl text-xs flex items-center gap-2 transition-all ${
+              tripDays > 21
+                ? "bg-[var(--rust)]/10 text-[var(--rust)]"
+                : "bg-[var(--sage)]/10 text-[var(--sage)]"
+            }`}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+              </svg>
+              <span className="font-medium">{tripDays} day{tripDays !== 1 ? "s" : ""}</span>
+              {tripDays > 21 && <span className="font-medium">— maximum is 21 days</span>}
+              {tripDays <= 21 && tripDays >= 1 && (
+                <span className="text-[var(--muted)] ml-auto">
+                  {tripDays <= 3 ? "Weekend getaway" : tripDays <= 7 ? "Perfect trip length" : tripDays <= 14 ? "Extended adventure" : "Epic journey"}
+                </span>
+              )}
+            </div>
           )}
 
           {/* Travelers + Budget */}
@@ -332,7 +440,7 @@ export default function Home() {
                 return (
                   <button key={v.label} type="button" onClick={() => toggleVibe(v.label)} aria-pressed={active}
                     className={`flex flex-col items-center gap-1.5 py-3 rounded-xl border text-[0.7rem] font-medium transition-all ${
-                      active ? "bg-[var(--ink)] text-[var(--amber)] border-[var(--ink)] shadow-md" : "bg-white text-[var(--muted)] border-[var(--sand)] hover:border-[var(--amber)] hover:text-[var(--amber)]"
+                      active ? "bg-[var(--ink)] text-[var(--amber)] border-[var(--ink)] shadow-md" : "bg-[var(--card)] text-[var(--muted)] border-[var(--sand)] hover:border-[var(--amber)] hover:text-[var(--amber)]"
                     }`}>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                       {VIBE_ICONS[v.icon]}
@@ -353,6 +461,9 @@ export default function Home() {
               value={form.interests} onChange={(e) => setForm({ ...form, interests: e.target.value })} rows={2}
               className="w-full px-4 py-3 rounded-xl border border-[var(--sand)] bg-[var(--paper)] text-[var(--ink)] placeholder:text-[var(--muted)]/50 focus:outline-none focus:border-[var(--amber)] focus:ring-2 focus:ring-[var(--amber)]/15 transition resize-none text-sm" />
           </div>
+
+          {/* Usage indicator */}
+          {isSignedIn && <UsageBadge />}
 
           {/* Submit */}
           <button type="submit" disabled={loading}
@@ -384,21 +495,24 @@ export default function Home() {
                 icon: <><circle cx="12" cy="12" r="10" /><path d="M12 8v4l3 3" /></>,
                 title: "1. Tell us your trip",
                 desc: "Pick your destination, dates, budget, and vibe. Takes 30 seconds.",
+                color: "var(--amber)",
               },
               {
                 icon: <><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></>,
                 title: "2. AI plans everything",
                 desc: "Our AI researches and builds a day-by-day itinerary with real places and prices.",
+                color: "var(--rust)",
               },
               {
                 icon: <><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z" /><line x1="8" y1="2" x2="8" y2="18" /><line x1="16" y1="6" x2="16" y2="22" /></>,
                 title: "3. Explore & customize",
                 desc: "Browse your itinerary with maps, edit any day, export PDF, or share with friends.",
+                color: "var(--sage)",
               },
-            ].map((step) => (
-              <div key={step.title} className="flex flex-col items-center text-center">
-                <div className="w-14 h-14 rounded-2xl bg-[var(--paper)] border border-[var(--sand)] flex items-center justify-center mb-4">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            ].map((step, i) => (
+              <div key={step.title} className={`flex flex-col items-center text-center group animate-fade-up stagger-${i + 1}`}>
+                <div className="w-14 h-14 rounded-2xl bg-[var(--paper)] border border-[var(--sand)] flex items-center justify-center mb-4 transition-all group-hover:scale-110 group-hover:shadow-lg group-hover:border-[var(--amber)]/30">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={step.color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                     {step.icon}
                   </svg>
                 </div>
@@ -410,11 +524,16 @@ export default function Home() {
         </div>
       </section>
 
-      <footer className="text-center py-8 border-t border-[var(--sand)]">
-        <p className="font-[family-name:var(--font-playfair)] font-bold text-[var(--ink)] mb-1">
+      <footer className="text-center py-10 border-t border-[var(--sand)]">
+        <p className="font-[family-name:var(--font-playfair)] font-bold text-lg text-[var(--ink)] mb-1.5">
           Roam<span className="italic text-[var(--amber)]">ly</span>
         </p>
-        <p className="text-[0.65rem] text-[var(--muted)]">Built with AI · Prices and details are estimates</p>
+        <p className="text-[0.7rem] text-[var(--muted)] mb-3">Your AI travel companion. Plan smarter, explore more.</p>
+        <div className="flex items-center justify-center gap-4 text-[0.6rem] text-[var(--muted)]/60">
+          <span>Prices and details are estimates</span>
+          <span className="text-[var(--sand)]">|</span>
+          <span>Always verify before booking</span>
+        </div>
       </footer>
     </main>
   );

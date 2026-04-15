@@ -27,7 +27,7 @@ export default function SavedTrips({ trips, onLoad, onDelete }: SavedTripsProps)
         <div className="space-y-2.5">
           {trips.map((t) => (
             <div key={t.id} onClick={() => onLoad(t)}
-              className="bg-white border border-[var(--sand)]/60 rounded-2xl px-5 py-4 flex items-center gap-4 cursor-pointer hover:border-[var(--amber)] hover:shadow-md transition-all group">
+              className="bg-[var(--card)] border border-[var(--sand)]/60 rounded-2xl px-5 py-4 flex items-center gap-4 cursor-pointer hover:border-[var(--amber)] hover:shadow-md transition-all group">
               <div className="w-10 h-10 rounded-xl bg-[var(--paper)] flex items-center justify-center text-lg font-[family-name:var(--font-playfair)] font-bold text-[var(--amber)] group-hover:bg-[var(--amber)] group-hover:text-white transition-colors">
                 {t.duration}
               </div>

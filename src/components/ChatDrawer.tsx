@@ -214,12 +214,12 @@ export default function ChatDrawer({ trip, isOpen, onClose, onTripUpdate }: Chat
 
       {/* Drawer */}
       <div
-        className={`fixed z-[2001] bg-white border-l border-[var(--sand)] shadow-2xl flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+        className={`fixed z-[2001] bg-[var(--card)] border-l border-[var(--sand)] shadow-2xl flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
           isOpen ? "translate-x-0" : "translate-x-full"
         } right-0 top-0 h-full w-full sm:w-[400px] lg:w-[380px]`}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--sand)] flex-shrink-0">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--sand)] flex-shrink-0 bg-[var(--card)]">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-[var(--amber)]/10 flex items-center justify-center">
               <SparkleIcon />
@@ -283,7 +283,7 @@ export default function ChatDrawer({ trip, isOpen, onClose, onTripUpdate }: Chat
                 {msg.update && !msg.applied && (
                   <button
                     onClick={() => applyUpdate(msg)}
-                    className="mt-3 flex items-center gap-1.5 text-[0.7rem] font-semibold text-[var(--amber)] hover:text-[var(--rust)] transition bg-white/80 px-3 py-1.5 rounded-lg border border-[var(--amber)]/30"
+                    className="mt-3 flex items-center gap-1.5 text-[0.7rem] font-semibold text-[var(--amber)] hover:text-[var(--rust)] transition bg-[var(--card)]/80 px-3 py-1.5 rounded-lg border border-[var(--amber)]/30"
                   >
                     <SparkleIcon /> Apply changes
                   </button>

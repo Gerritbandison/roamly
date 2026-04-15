@@ -11,7 +11,37 @@
   --muted: #8a7e6f;
   --white: #ffffff;
   --card: #ffffff;
+  --card-alt: #f5f0e8;
   --overlay: rgba(26, 18, 8, 0.55);
+  --border: var(--sand);
+  --input-bg: var(--paper);
+  --hero-from: #ede4d0;
+  --hero-via: var(--paper);
+  --hero-to: #ffffff;
+  --section-bg: #ffffff;
+  --form-bg: #ffffff;
+}
+
+html.dark {
+  --ink: #f0e8d8;
+  --paper: #151210;
+  --sand: #2a2520;
+  --amber: #e89f4c;
+  --amber-light: #3d2e1a;
+  --rust: #e0663a;
+  --sage: #5fa06e;
+  --muted: #9a8e7f;
+  --white: #1c1816;
+  --card: #1c1816;
+  --card-alt: #221e1a;
+  --overlay: rgba(0, 0, 0, 0.7);
+  --border: #2a2520;
+  --input-bg: #1c1816;
+  --hero-from: #1a1510;
+  --hero-via: var(--paper);
+  --hero-to: var(--paper);
+  --section-bg: var(--paper);
+  --form-bg: #1c1816;
 }
 
 @theme inline {
@@ -23,6 +53,8 @@
   --color-rust: var(--rust);
   --color-sage: var(--sage);
   --color-muted: var(--muted);
+  --color-card: var(--card);
+  --color-card-alt: var(--card-alt);
   --font-sans: var(--font-dm-sans);
   --font-serif: var(--font-playfair);
 }
@@ -72,6 +104,24 @@ body {
 
 @keyframes dash-draw {
   to { stroke-dashoffset: 0; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(2px); }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(212, 135, 58, 0); }
+  50% { box-shadow: 0 0 20px 4px rgba(212, 135, 58, 0.15); }
 }
 
 /* ── Accessibility ───────────────────────────────────── */
@@ -124,11 +174,23 @@ body {
   animation: scaleIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.stagger-1 { animation-delay: 0.05s; }
-.stagger-2 { animation-delay: 0.1s; }
-.stagger-3 { animation-delay: 0.15s; }
-.stagger-4 { animation-delay: 0.2s; }
-.stagger-5 { animation-delay: 0.25s; }
+.stagger-1 { animation-delay: 0.08s; }
+.stagger-2 { animation-delay: 0.16s; }
+.stagger-3 { animation-delay: 0.24s; }
+.stagger-4 { animation-delay: 0.32s; }
+.stagger-5 { animation-delay: 0.40s; }
+
+.animate-shake {
+  animation: shake 0.5s ease;
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
 
 /* ── Scrollbar ────────────────────────────────────────── */
 .overflow-y-auto::-webkit-scrollbar,
@@ -175,6 +237,9 @@ body {
   background: rgba(255, 255, 255, 0.7);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+}
+html.dark .glass {
+  background: rgba(28, 24, 22, 0.7);
 }
 
 /* ── Print styles ─────────────────────────────────────── */

@@ -1,5 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest } from "next/server";
+import { auth } from "@clerk/nextjs/server";
+import { checkUsageLimit, trackUsage } from "@/lib/usage";
+import { env } from "@/lib/env";
 
 function getClient() {
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -10,6 +13,17 @@ function getClient() {
 
 export async function POST(req: NextRequest) {
   try {
+    const { userId } = await auth();
+    if (userId) {
+      const usage = await checkUsageLimit(userId, "chat");
+      if (!usage.allowed) {
+        return new Response(
+          JSON.stringify({ error: "Monthly chat limit reached", code: "USAGE_LIMIT", current: usage.current, limit: usage.limit, resetsAt: usage.resetsAt.toISOString() }),
+          { status: 429, headers: { "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     const body = await req.json();
     const { message, trip, history } = body;
 
@@ -81,7 +95,7 @@ Key rules:
 
         try {
           const stream = getClient().messages.stream({
-            model: "claude-sonnet-4-20250514",
+            model: env.AI_MODEL,
             max_tokens: 8192,
             messages,
             system: systemPrompt,
@@ -116,6 +130,8 @@ Key rules:
           } else {
             send({ type: "complete", text: fullText, update: null });
           }
+          // Track usage on success
+          if (userId) trackUsage(userId, "chat");
         } catch (err) {
           const msg =
             err instanceof Error ? err.message : "Unknown error occurred";

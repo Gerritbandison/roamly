@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
+import { auth } from "@clerk/nextjs/server";
 import { env } from "@/lib/env";
 import { rateLimit } from "@/lib/rateLimit";
 import { log } from "@/lib/logger";
@@ -50,6 +51,11 @@ function buildHtml(data: z.infer<typeof BodySchema>): string {
 }
 
 export async function POST(req: NextRequest) {
+  const { userId } = await auth();
+  if (!userId) {
+    return Response.json({ error: "Sign in to send emails" }, { status: 401 });
+  }
+
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "127.0.0.1";
   const rl = rateLimit(`email:${ip}`, 3, 60_000); // 3 emails/min

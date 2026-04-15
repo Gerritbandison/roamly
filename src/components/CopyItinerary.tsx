@@ -164,7 +164,7 @@ export default function CopyItinerary({
 
         {/* Preview */}
         <div className="flex-1 overflow-y-auto px-5 py-4">
-          <pre className="text-xs text-[var(--ink)] bg-white rounded-xl border border-[var(--sand)] p-4 whitespace-pre-wrap font-[family-name:var(--font-dm-sans)] leading-relaxed max-h-[50vh] overflow-y-auto">
+          <pre className="text-xs text-[var(--ink)] bg-[var(--card)] rounded-xl border border-[var(--sand)] p-4 whitespace-pre-wrap font-[family-name:var(--font-dm-sans)] leading-relaxed max-h-[50vh] overflow-y-auto">
             {content}
           </pre>
         </div>

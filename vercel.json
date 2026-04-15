@@ -3,7 +3,13 @@
   "regions": ["iad1"],
   "functions": {
     "src/app/api/generate/route.ts": {
-      "maxDuration": 60
+      "maxDuration": 120
+    },
+    "src/app/api/chat/route.ts": {
+      "maxDuration": 90
+    },
+    "src/app/api/regenerate-day/route.ts": {
+      "maxDuration": 90
     }
   },
   "headers": [

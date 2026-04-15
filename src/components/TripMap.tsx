@@ -20,8 +20,10 @@ export default function TripMap({ days, activeDay, onDayClick }: TripMapProps) {
   const onDayClickRef = useRef(onDayClick);
 
   // Keep refs in sync
-  activeDayRef.current = activeDay;
-  onDayClickRef.current = onDayClick;
+  useEffect(() => {
+    activeDayRef.current = activeDay;
+    onDayClickRef.current = onDayClick;
+  });
 
   // Initialize map (once)
   useEffect(() => {

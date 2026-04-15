@@ -62,15 +62,12 @@ function DonutChart({
 
   // Build segments
   const total = categories.reduce((s, c) => s + c.optimized_spend, 0);
-  let cumulativeAngle = -90; // Start from top
 
-  const segments = categories.map((cat) => {
+  const segments = categories.reduce<Array<BudgetCategory & { pct: number; path: string }>>((acc, cat, i) => {
     const pct = total > 0 ? cat.optimized_spend / total : 0;
     const angle = pct * 360;
-    const startAngle = cumulativeAngle;
-    cumulativeAngle += angle;
+    const startAngle = i === 0 ? -90 : acc.reduce((s, seg) => s + (total > 0 ? seg.pct * 360 : 0), -90);
 
-    // Arc path using SVG
     const startRad = (startAngle * Math.PI) / 180;
     const endRad = ((startAngle + angle) * Math.PI) / 180;
 
@@ -81,16 +78,16 @@ function DonutChart({
 
     const largeArc = angle > 180 ? 1 : 0;
 
-    return {
+    acc.push({
       ...cat,
       pct,
       path:
         angle >= 359.99
-          ? // Full circle — use two arcs
-            `M ${cx + radius} ${cy} A ${radius} ${radius} 0 1 1 ${cx - radius} ${cy} A ${radius} ${radius} 0 1 1 ${cx + radius} ${cy}`
+          ? `M ${cx + radius} ${cy} A ${radius} ${radius} 0 1 1 ${cx - radius} ${cy} A ${radius} ${radius} 0 1 1 ${cx + radius} ${cy}`
           : `M ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2}`,
-    };
-  });
+    });
+    return acc;
+  }, []);
 
   return (
     <svg viewBox={`0 0 ${size} ${size}`} className="w-48 h-48 mx-auto">
@@ -257,9 +254,9 @@ export default function BudgetOptimizer({
       className="fixed inset-0 z-[9999] bg-[var(--overlay)] backdrop-blur-md flex items-end sm:items-center justify-center animate-fade-in"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="bg-white w-full max-w-lg max-h-[90vh] rounded-t-3xl sm:rounded-3xl shadow-2xl border border-[var(--sand)] flex flex-col animate-scale-in overflow-hidden">
+      <div className="bg-[var(--card)] w-full max-w-lg max-h-[90vh] rounded-t-3xl sm:rounded-3xl shadow-2xl border border-[var(--sand)] flex flex-col animate-scale-in overflow-hidden">
         {/* Header */}
-        <div className="sticky top-0 bg-white/95 backdrop-blur border-b border-[var(--sand)] px-5 py-4 flex items-center justify-between z-10 rounded-t-3xl flex-shrink-0">
+        <div className="sticky top-0 bg-[var(--card)]/95 backdrop-blur border-b border-[var(--sand)] px-5 py-4 flex items-center justify-between z-10 rounded-t-3xl flex-shrink-0">
           <div className="flex items-center gap-2.5">
             <span className="text-lg">💰</span>
             <div>
@@ -414,7 +411,7 @@ export default function BudgetOptimizer({
                         onClick={() =>
                           setActiveCategory(isExpanded ? null : i)
                         }
-                        className="w-full text-left bg-white rounded-xl border border-[var(--sand)] p-3 hover:border-[var(--amber)]/40 transition group"
+                        className="w-full text-left bg-[var(--card)] rounded-xl border border-[var(--sand)] p-3 hover:border-[var(--amber)]/40 transition group"
                       >
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">

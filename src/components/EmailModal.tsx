@@ -105,7 +105,7 @@ export default function EmailModal({ trip, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-[9999] bg-[var(--overlay)] backdrop-blur-md flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl shadow-2xl border border-[var(--sand)] w-full max-w-sm animate-scale-in">
+      <div className="bg-[var(--card)] rounded-3xl shadow-2xl border border-[var(--sand)] w-full max-w-sm animate-scale-in">
         <div className="px-6 pt-6 pb-2 flex items-center justify-between">
           <h2 className="font-[family-name:var(--font-playfair)] text-lg font-bold text-[var(--ink)]">
             Email Itinerary

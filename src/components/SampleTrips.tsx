@@ -72,7 +72,7 @@ interface SampleTripsProps {
 }
 
 export default function SampleTrips({ onSelect }: SampleTripsProps) {
-  const useSample = (s: (typeof SAMPLE_TRIPS)[0]) => {
+  const selectSample = (s: (typeof SAMPLE_TRIPS)[0]) => {
     const today = new Date();
     const start = new Date(today);
     start.setDate(start.getDate() + 14);
@@ -101,7 +101,7 @@ export default function SampleTrips({ onSelect }: SampleTripsProps) {
           {SAMPLE_TRIPS.map((s, i) => (
             <button
               key={s.destination}
-              onClick={() => useSample(s)}
+              onClick={() => selectSample(s)}
               className={`group relative overflow-hidden rounded-2xl border border-[var(--sand)]/50 text-left transition-all hover:shadow-xl hover:border-[var(--amber)]/40 hover:-translate-y-0.5 animate-fade-up ${
                 i < 2 ? "aspect-[4/3] md:aspect-[3/2]" : "aspect-[4/3]"
               }`}

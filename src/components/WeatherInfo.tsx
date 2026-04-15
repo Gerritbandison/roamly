@@ -3,28 +3,10 @@
 import { useState } from "react";
 import type { Trip } from "@/types/itinerary";
 
-/* ── Weather data by month (simplified climate averages) ── */
-interface ClimateMonth {
-  month: string;
-  avgHigh: number;
-  avgLow: number;
-  rain: number; // mm
-  emoji: string;
-}
-
 function getSeasonEmoji(month: number): string {
   if (month >= 3 && month <= 5) return "🌸";
   if (month >= 6 && month <= 8) return "☀️";
   if (month >= 9 && month <= 11) return "🍂";
-  return "❄️";
-}
-
-function getWeatherEmoji(rain: number, high: number): string {
-  if (rain > 150) return "🌧️";
-  if (rain > 100) return "🌦️";
-  if (high > 30) return "☀️";
-  if (high > 20) return "⛅";
-  if (high > 10) return "🌤️";
   return "❄️";
 }
 
@@ -156,7 +138,7 @@ export default function WeatherInfo({
               </div>
 
               {/* Your travel period */}
-              <div className="bg-white rounded-2xl border border-[var(--sand)] p-4">
+              <div className="bg-[var(--card)] rounded-2xl border border-[var(--sand)] p-4">
                 <h3 className="text-[0.65rem] uppercase tracking-[0.12em] text-[var(--muted)] font-medium mb-3">
                   Your Travel Period
                 </h3>
@@ -178,7 +160,7 @@ export default function WeatherInfo({
               </div>
 
               {/* Transport tips */}
-              <div className="bg-white rounded-2xl border border-[var(--sand)] p-4">
+              <div className="bg-[var(--card)] rounded-2xl border border-[var(--sand)] p-4">
                 <div className="flex items-start gap-3">
                   <span className="text-lg">🚌</span>
                   <div>
@@ -194,7 +176,7 @@ export default function WeatherInfo({
 
               {/* Weather-based packing tips */}
               {weatherTips.length > 0 && (
-                <div className="bg-white rounded-2xl border border-[var(--sand)] p-4">
+                <div className="bg-[var(--card)] rounded-2xl border border-[var(--sand)] p-4">
                   <h3 className="text-[0.65rem] uppercase tracking-[0.12em] text-[var(--muted)] font-medium mb-3">
                     Weather Packing Tips
                   </h3>
@@ -210,7 +192,7 @@ export default function WeatherInfo({
               )}
 
               {/* Currency info */}
-              <div className="bg-white rounded-2xl border border-[var(--sand)] p-4">
+              <div className="bg-[var(--card)] rounded-2xl border border-[var(--sand)] p-4">
                 <div className="flex items-start gap-3">
                   <span className="text-lg">💱</span>
                   <div>
@@ -240,7 +222,7 @@ export default function WeatherInfo({
                       className={`rounded-xl p-3 text-center border transition ${
                         isTravel
                           ? "bg-[var(--amber)]/10 border-[var(--amber)]/30"
-                          : "bg-white border-[var(--sand)]"
+                          : "bg-[var(--card)] border-[var(--sand)]"
                       }`}
                     >
                       <span className="text-lg">{getSeasonEmoji(i + 1)}</span>
@@ -258,7 +240,7 @@ export default function WeatherInfo({
               </div>
 
               {/* Season breakdown */}
-              <div className="bg-white rounded-2xl border border-[var(--sand)] p-4 space-y-3">
+              <div className="bg-[var(--card)] rounded-2xl border border-[var(--sand)] p-4 space-y-3">
                 <h3 className="text-[0.65rem] uppercase tracking-[0.12em] text-[var(--muted)] font-medium">
                   Seasonal Overview
                 </h3>

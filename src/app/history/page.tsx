@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 
@@ -61,20 +61,14 @@ function timeAgo(dateStr: string): string {
 /* ── Page ────────────────────────────────────────────── */
 export default function HistoryPage() {
   const router = useRouter();
-  const [entries, setEntries] = useState<HistoryEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
+  const [entries, setEntries] = useState<HistoryEntry[]>(() => {
+    if (typeof window === "undefined") return [];
     try {
       const raw = localStorage.getItem("roamly_history");
-      if (raw) {
-        setEntries(JSON.parse(raw));
-      }
-    } catch {
-      /* ignore */
-    }
-    setLoading(false);
-  }, []);
+      return raw ? JSON.parse(raw) : [];
+    } catch { return []; }
+  });
+  const [loading] = useState(false);
 
   const handleOpen = (id: string) => {
     router.push(`/itinerary?id=${id}`);
@@ -159,7 +153,7 @@ export default function HistoryPage() {
             {entries.map((entry) => (
               <div
                 key={entry.id}
-                className="group bg-white rounded-2xl border border-[var(--sand)] overflow-hidden hover:border-[var(--amber)]/40 hover:shadow-md transition-all cursor-pointer"
+                className="group bg-[var(--card)] rounded-2xl border border-[var(--sand)] overflow-hidden hover:border-[var(--amber)]/40 hover:shadow-md transition-all cursor-pointer"
                 onClick={() => handleOpen(entry.id)}
               >
                 <div className="flex">

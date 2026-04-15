@@ -1,5 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest } from "next/server";
+import { auth } from "@clerk/nextjs/server";
+import { checkUsageLimit, trackUsage } from "@/lib/usage";
+import { env } from "@/lib/env";
 
 function getClient() {
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -13,6 +16,24 @@ function getClient() {
 // ── Route ────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
+    // Check usage limits for authenticated users
+    const { userId } = await auth();
+    if (userId) {
+      const usage = await checkUsageLimit(userId, "generate");
+      if (!usage.allowed) {
+        return new Response(
+          JSON.stringify({
+            error: "Monthly trip limit reached",
+            code: "USAGE_LIMIT",
+            current: usage.current,
+            limit: usage.limit,
+            resetsAt: usage.resetsAt.toISOString(),
+          }),
+          { status: 429, headers: { "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     const body = await req.json();
     const { destination, startDate, endDate, travelers, budget, interests } =
       body;
@@ -150,7 +171,7 @@ Requirements:
           });
 
           const stream = getClient().messages.stream({
-            model: "claude-sonnet-4-20250514",
+            model: env.AI_MODEL,
             max_tokens: maxTokens,
             messages: [{ role: "user", content: userPrompt }],
             system: systemPrompt,
@@ -206,7 +227,33 @@ Requirements:
             }
           }
 
-          send({ type: "complete", progress: 100, data: tripData });
+          // Normalize: handle both { trip: {...} } and bare trip object
+          const trip = tripData.trip ?? tripData;
+          if (!trip.destination || !Array.isArray(trip.days) || trip.days.length === 0) {
+            throw new Error("AI returned invalid trip structure — please try again");
+          }
+          // Ensure each day has required fields with safe fallbacks
+          for (const day of trip.days) {
+            day.locations = Array.isArray(day.locations) ? day.locations : [];
+            day.food = Array.isArray(day.food) ? day.food : [];
+            day.costs = Array.isArray(day.costs) ? day.costs : [];
+            day.morning = day.morning ?? "";
+            day.afternoon = day.afternoon ?? "";
+            day.evening = day.evening ?? "";
+            day.theme = day.theme ?? `Day ${day.day}`;
+            day.region = day.region ?? "";
+            day.tips = day.tips ?? "";
+          }
+          if (!trip.practical_info) {
+            trip.practical_info = { best_time_to_visit: "", currency: "", transport_tips: "", budget_estimate: "" };
+          }
+
+          send({ type: "complete", progress: 100, data: { trip } });
+
+          // Track usage on successful generation
+          if (userId) {
+            trackUsage(userId, "generate");
+          }
         } catch (err) {
           const msg =
             err instanceof Error ? err.message : "Unknown error occurred";

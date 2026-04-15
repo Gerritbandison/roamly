@@ -95,8 +95,8 @@ function EditModal({
     setDraft((p) => ({ ...p, [f]: v }));
   return (
     <div className="fixed inset-0 z-[9999] bg-[var(--overlay)] backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
-      <div className="bg-white rounded-3xl shadow-2xl border border-[var(--sand)] w-full max-w-lg max-h-[85vh] overflow-y-auto animate-scale-in">
-        <div className="sticky top-0 bg-white/90 backdrop-blur border-b border-[var(--sand)] px-6 py-4 flex items-center justify-between z-10 rounded-t-3xl">
+      <div className="bg-[var(--card)] rounded-3xl shadow-2xl border border-[var(--sand)] w-full max-w-lg max-h-[85vh] overflow-y-auto animate-scale-in">
+        <div className="sticky top-0 bg-[var(--card)]/90 backdrop-blur border-b border-[var(--sand)] px-6 py-4 flex items-center justify-between z-10 rounded-t-3xl">
           <h2 className="font-[family-name:var(--font-playfair)] text-lg font-bold">
             Day {day.day}: {day.theme}
           </h2>
@@ -113,7 +113,7 @@ function EditModal({
                   <input
                     value={draft[f]}
                     onChange={(e) => upd(f, e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl border border-[var(--sand)] bg-[var(--paper)] text-sm focus:outline-none focus:border-[var(--amber)] transition"
+                    className="w-full px-3 py-2.5 rounded-xl border border-[var(--sand)] bg-[var(--input-bg)] text-sm text-[var(--ink)] focus:outline-none focus:border-[var(--amber)] transition"
                   />
                 ) : (
                   <textarea
@@ -127,7 +127,7 @@ function EditModal({
             )
           )}
         </div>
-        <div className="sticky bottom-0 bg-white border-t border-[var(--sand)] px-6 py-4 flex gap-3 justify-end rounded-b-3xl">
+        <div className="sticky bottom-0 bg-[var(--card)] border-t border-[var(--sand)] px-6 py-4 flex gap-3 justify-end rounded-b-3xl">
           <button onClick={onCancel} className="px-5 py-2.5 rounded-xl border border-[var(--sand)] text-[var(--muted)] text-sm hover:border-[var(--ink)] transition">
             Cancel
           </button>
@@ -270,6 +270,16 @@ function ItineraryContent() {
     setShowMap(false);
   }, []);
 
+  // Persist trip to DB (fire-and-forget)
+  const persistToDb = useCallback((tripData: Trip) => {
+    if (!tripId) return;
+    fetch(`/api/trips/${tripId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tripData }),
+    }).catch(() => { /* DB update failed silently — local copy is still saved */ });
+  }, [tripId]);
+
   const handleSaveDay = useCallback((updated: DayPlan) => {
     if (!trip) return;
     const days = trip.days.map((d) => (d.day === updated.day ? updated : d));
@@ -277,55 +287,15 @@ function ItineraryContent() {
     setTrip(next);
     const json = JSON.stringify({ trip: next });
     sessionStorage.setItem("roamly_trip", json);
-    // Also persist to localStorage if we have a trip ID
     if (tripId) {
       localStorage.setItem(`roamly_trip_${tripId}`, json);
     }
+    persistToDb(next);
     setEditingDay(null);
-  }, [trip, tripId]);
-
-  const handleShare = async () => {
-    if (!trip) return;
-    try {
-      const pako = (await import("pako")).default;
-      const json = JSON.stringify({ trip });
-      const compressed = pako.deflate(new TextEncoder().encode(json));
-      // Convert to base64 using btoa with binary string
-      let binary = "";
-      for (let i = 0; i < compressed.length; i++) {
-        binary += String.fromCharCode(compressed[i]);
-      }
-      const encoded = btoa(binary);
-      const url = `${window.location.origin}/share#${encoded}`;
-
-      if (url.length < 8000) {
-        // URL is short enough to share
-        try {
-          if (navigator.share) {
-            await navigator.share({ title: `Roamly — ${trip.destination}`, url });
-            return;
-          }
-        } catch { /* user cancelled share dialog */ }
-        await navigator.clipboard.writeText(url);
-        setShowShareToast(true);
-        setTimeout(() => setShowShareToast(false), 2500);
-      } else {
-        // Trip too large even compressed — copy JSON as fallback
-        await navigator.clipboard.writeText(json);
-        setShareToastMessage("Trip data copied (too large for link)");
-        setShowShareToast(true);
-        setTimeout(() => setShowShareToast(false), 3000);
-      }
-    } catch {
-      // Compression failed — copy raw JSON
-      try {
-        await navigator.clipboard.writeText(JSON.stringify({ trip }));
-        setShareToastMessage("Trip data copied");
-        setShowShareToast(true);
-        setTimeout(() => setShowShareToast(false), 2500);
-      } catch { /* ignore */ }
-    }
-  };
+    setShareToastMessage("Changes saved");
+    setShowShareToast(true);
+    setTimeout(() => setShowShareToast(false), 2000);
+  }, [trip, tripId, persistToDb]);
 
   const handleTripUpdate = useCallback((updatedTrip: Trip) => {
     setTrip(updatedTrip);
@@ -334,7 +304,8 @@ function ItineraryContent() {
     if (tripId) {
       localStorage.setItem(`roamly_trip_${tripId}`, json);
     }
-  }, [tripId]);
+    persistToDb(updatedTrip);
+  }, [tripId, persistToDb]);
 
   const handleRegenerate = useCallback(async (dayNumber: number, modifier: RegenerateModifier) => {
     if (!trip || regeneratingDay !== null) return;
@@ -377,10 +348,13 @@ function ItineraryContent() {
       }
     } catch (err) {
       console.error("Regenerate error:", err);
+      setShareToastMessage("Failed to regenerate day — try again");
+      setShowShareToast(true);
+      setTimeout(() => setShowShareToast(false), 3000);
     } finally {
       setRegeneratingDay(null);
     }
-  }, [trip, tripId, regeneratingDay, handleTripUpdate]);
+  }, [trip, regeneratingDay, handleTripUpdate]);
 
   // Scroll day strip to active
   useEffect(() => {
@@ -542,7 +516,7 @@ function ItineraryContent() {
         </div>
 
         {/* ── Horizontal Day Strip ─────────────────── */}
-        <div className="bg-white border-b border-[var(--sand)] flex-shrink-0 z-10 print:hidden">
+        <div className="bg-[var(--card)] border-b border-[var(--sand)] flex-shrink-0 z-10 print:hidden">
           <div ref={dayStripRef} className="flex items-center gap-1.5 px-4 py-2.5 overflow-x-auto no-scrollbar">
             {trip.days.map((d) => {
               const isActive = d.day === activeDay;
@@ -622,7 +596,7 @@ function ItineraryContent() {
                   value={search}
                   onChange={(e) => handleSearch(e.target.value)}
                   aria-label="Search itinerary"
-                  className="w-full max-w-md px-4 py-2.5 rounded-xl border border-[var(--sand)] bg-white text-sm text-[var(--ink)] placeholder:text-[var(--muted)]/50 focus:outline-none focus:border-[var(--amber)] focus:ring-2 focus:ring-[var(--amber)]/15 transition"
+                  className="w-full max-w-md px-4 py-2.5 rounded-xl border border-[var(--sand)] bg-[var(--card)] text-sm text-[var(--ink)] placeholder:text-[var(--muted)]/50 focus:outline-none focus:border-[var(--amber)] focus:ring-2 focus:ring-[var(--amber)]/15 transition"
                 />
               </div>
 
@@ -632,6 +606,7 @@ function ItineraryContent() {
                   <DayCard
                     key={day.day}
                     day={day}
+                    tripId={tripId || undefined}
                     isActive={day.day === activeDay}
                     onClick={() => setActiveDay(day.day)}
                     onEdit={() => setEditingDay(day.day)}
@@ -649,7 +624,7 @@ function ItineraryContent() {
                 )}
 
                 {/* Practical info */}
-                <div className="bg-white rounded-2xl border border-[var(--sand)] p-6 space-y-4 mt-6">
+                <div className="bg-[var(--card)] rounded-2xl border border-[var(--sand)] p-6 space-y-4 mt-6">
                   <h3 className="text-[0.65rem] uppercase tracking-[0.14em] text-[var(--muted)] font-medium flex items-center gap-2">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
                     Practical Info
@@ -689,7 +664,7 @@ function ItineraryContent() {
 
               {/* Map overlay card */}
               {activeData && (
-                <div className="absolute bottom-5 left-4 z-[1000] bg-white/90 backdrop-blur-md rounded-2xl px-4 py-3 max-w-[200px] border border-[var(--sand)] shadow-lg text-sm">
+                <div className="absolute bottom-5 left-4 z-[1000] bg-[var(--card)]/90 backdrop-blur-md rounded-2xl px-4 py-3 max-w-[200px] border border-[var(--sand)] shadow-lg text-sm">
                   <div className="text-[0.6rem] uppercase tracking-[0.1em] text-[var(--amber)] font-medium mb-0.5">
                     Day {activeDay}{activeData.region ? ` · ${activeData.region}` : ""}
                   </div>

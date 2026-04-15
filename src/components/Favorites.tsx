@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import type { Trip } from "@/types/itinerary";
 
 interface FavoriteItem {
@@ -12,14 +12,13 @@ interface FavoriteItem {
 
 export function useFavorites(tripId: string) {
   const key = `roamly_favorites_${tripId}`;
-  const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
-
-  useEffect(() => {
+  const [favorites, setFavorites] = useState<FavoriteItem[]>(() => {
+    if (typeof window === "undefined") return [];
     try {
       const stored = localStorage.getItem(key);
-      if (stored) setFavorites(JSON.parse(stored));
-    } catch { /* ignore */ }
-  }, [key]);
+      return stored ? JSON.parse(stored) : [];
+    } catch { return []; }
+  });
 
   const toggle = (item: FavoriteItem) => {
     setFavorites((prev) => {
@@ -44,7 +43,6 @@ export function useFavorites(tripId: string) {
 
 /* ── Favorites Panel (modal) ── */
 export default function FavoritesPanel({
-  trip,
   favorites,
   isOpen,
   onClose,
@@ -113,7 +111,7 @@ export default function FavoritesPanel({
                   <button
                     key={i}
                     onClick={() => { onScrollToDay(p.day); onClose(); }}
-                    className="w-full text-left bg-white rounded-xl border border-[var(--sand)] p-3 hover:border-[var(--amber)]/40 hover:shadow-sm transition"
+                    className="w-full text-left bg-[var(--card)] rounded-xl border border-[var(--sand)] p-3 hover:border-[var(--amber)]/40 hover:shadow-sm transition"
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium text-[var(--ink)]">{p.name}</span>
@@ -141,7 +139,7 @@ export default function FavoritesPanel({
                   <button
                     key={i}
                     onClick={() => { onScrollToDay(f.day); onClose(); }}
-                    className="w-full text-left bg-white rounded-xl border border-[var(--sand)] p-3 hover:border-[var(--amber)]/40 hover:shadow-sm transition"
+                    className="w-full text-left bg-[var(--card)] rounded-xl border border-[var(--sand)] p-3 hover:border-[var(--amber)]/40 hover:shadow-sm transition"
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium text-[var(--ink)]">{f.name}</span>

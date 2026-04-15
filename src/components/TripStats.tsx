@@ -18,7 +18,7 @@ interface StatCardProps {
 
 function StatCard({ emoji, value, label, color }: StatCardProps) {
   return (
-    <div className="bg-white rounded-2xl border border-[var(--sand)] p-4 flex flex-col items-center text-center hover:shadow-md hover:border-[var(--amber)]/30 transition">
+    <div className="bg-[var(--card)] rounded-2xl border border-[var(--sand)] p-4 flex flex-col items-center text-center hover:shadow-md hover:border-[var(--amber)]/30 transition">
       <span className="text-2xl mb-1">{emoji}</span>
       <span className={`text-xl font-bold font-[family-name:var(--font-playfair)] ${color}`}>
         {value}
@@ -159,7 +159,7 @@ export default function TripStats({
 
           {/* Spend overview */}
           {stats.totalSpend > 0 && (
-            <div className="bg-white rounded-2xl border border-[var(--sand)] p-4 space-y-4">
+            <div className="bg-[var(--card)] rounded-2xl border border-[var(--sand)] p-4 space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-[0.65rem] uppercase tracking-[0.12em] text-[var(--muted)] font-medium">
                   Budget Breakdown
@@ -230,7 +230,7 @@ export default function TripStats({
 
           {/* Regions visited */}
           {stats.regions.length > 0 && (
-            <div className="bg-white rounded-2xl border border-[var(--sand)] p-4">
+            <div className="bg-[var(--card)] rounded-2xl border border-[var(--sand)] p-4">
               <h3 className="text-[0.65rem] uppercase tracking-[0.12em] text-[var(--muted)] font-medium mb-3">
                 Regions Explored
               </h3>

@@ -120,9 +120,9 @@ export default function PackingList({ trip, isOpen, onClose }: PackingListProps)
       className="fixed inset-0 z-[9999] bg-[var(--overlay)] backdrop-blur-md flex items-center justify-center p-4 animate-fade-in"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="bg-white rounded-3xl shadow-2xl border border-[var(--sand)] w-full max-w-lg max-h-[85vh] flex flex-col animate-scale-in">
+      <div className="bg-[var(--card)] rounded-3xl shadow-2xl border border-[var(--sand)] w-full max-w-lg max-h-[85vh] flex flex-col animate-scale-in">
         {/* Header */}
-        <div className="sticky top-0 bg-white/95 backdrop-blur border-b border-[var(--sand)] px-6 py-4 flex items-center justify-between z-10 rounded-t-3xl">
+        <div className="sticky top-0 bg-[var(--card)]/95 backdrop-blur border-b border-[var(--sand)] px-6 py-4 flex items-center justify-between z-10 rounded-t-3xl">
           <div>
             <h2 className="font-[family-name:var(--font-playfair)] text-lg font-bold text-[var(--ink)] flex items-center gap-2">
               🎒 Packing List
@@ -247,7 +247,7 @@ export default function PackingList({ trip, isOpen, onClose }: PackingListProps)
                       className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
                         item.checked
                           ? "bg-[var(--sage)] border-[var(--sage)]"
-                          : "border-[var(--sand)] bg-white"
+                          : "border-[var(--sand)] bg-[var(--input-bg)]"
                       }`}
                     >
                       {item.checked && (

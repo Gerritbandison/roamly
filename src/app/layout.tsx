@@ -1,5 +1,8 @@
 import type { Metadata, Viewport } from "next";
+import { ClerkProvider } from "@clerk/nextjs";
 import ServiceWorkerRegistrar from "@/components/ServiceWorkerRegistrar";
+import AuthButtons from "@/components/AuthButtons";
+import ThemeToggle from "@/components/ThemeToggle";
 import { DM_Sans, Playfair_Display } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import ErrorBoundary from "@/components/ErrorBoundary";
@@ -23,7 +26,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   viewportFit: "cover",
-  themeColor: "#10B981",
+  themeColor: "#d4873a",
 };
 
 export const metadata: Metadata = {
@@ -80,15 +83,26 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${dmSans.variable} ${playfair.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col font-[family-name:var(--font-dm-sans)]">
-        <ErrorBoundary>{children}</ErrorBoundary>
-        <ServiceWorkerRegistrar />
-        <Analytics />
-      </body>
-    </html>
+    <ClerkProvider>
+      <html
+        lang="en"
+        className={`${dmSans.variable} ${playfair.variable} h-full antialiased`}
+        suppressHydrationWarning
+      >
+        <head>
+          <script dangerouslySetInnerHTML={{ __html: `try{var t=localStorage.getItem("roamly_theme");if(t==="dark"||(!t&&matchMedia("(prefers-color-scheme:dark)").matches))document.documentElement.classList.add("dark")}catch(e){}` }} />
+        </head>
+        <body className="min-h-full flex flex-col font-[family-name:var(--font-dm-sans)]">
+          {/* Top-right controls: auth + theme toggle */}
+          <div className="fixed top-4 right-4 z-[9000] print:hidden flex items-center gap-2">
+            <AuthButtons />
+            <ThemeToggle />
+          </div>
+          <ErrorBoundary>{children}</ErrorBoundary>
+          <ServiceWorkerRegistrar />
+          <Analytics />
+        </body>
+      </html>
+    </ClerkProvider>
   );
 }

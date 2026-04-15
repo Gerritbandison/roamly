@@ -22,7 +22,7 @@ export default function ItinerarySkeleton() {
       </div>
 
       {/* Day strip skeleton */}
-      <div className="bg-white border-b border-[var(--sand)] flex-shrink-0">
+      <div className="bg-[var(--card)] border-b border-[var(--sand)] flex-shrink-0">
         <div className="flex items-center gap-1.5 px-4 py-2.5">
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="flex-shrink-0 w-12 h-14 rounded-xl shimmer" />
@@ -39,7 +39,7 @@ export default function ItinerarySkeleton() {
 
             {/* Card skeletons */}
             {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="rounded-2xl border border-[var(--sand)] bg-white p-5">
+              <div key={i} className="rounded-2xl border border-[var(--sand)] bg-[var(--card)] p-5">
                 <div className="flex gap-4 items-start">
                   <div className="w-11 h-11 rounded-xl shimmer" />
                   <div className="flex-1 space-y-2">

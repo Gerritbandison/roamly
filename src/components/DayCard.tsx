@@ -14,6 +14,7 @@ interface FavoriteItem {
 
 interface DayCardProps {
   day: DayPlan;
+  tripId?: string;
   isActive: boolean;
   onClick: () => void;
   onEdit?: () => void;
@@ -84,12 +85,13 @@ const NoteIcon = () => (
   </svg>
 );
 
-export default function DayCard({ day, isActive, onClick, onEdit, onRegenerate, isRegenerating, isPrintMode, onToggleFavorite, isFavorite }: DayCardProps) {
+export default function DayCard({ day, tripId, isActive, onClick, onEdit, onRegenerate, isRegenerating, isPrintMode, onToggleFavorite, isFavorite }: DayCardProps) {
   const [showModifiers, setShowModifiers] = useState(false);
+  const noteKey = `roamly_note_${tripId || "default"}_${day.day}`;
   const [note, setNote] = useState(() => {
     if (typeof window === "undefined") return "";
     try {
-      return localStorage.getItem(`roamly_note_${day.day}`) || "";
+      return localStorage.getItem(noteKey) || "";
     } catch { return ""; }
   });
   const [showNoteInput, setShowNoteInput] = useState(false);
@@ -100,9 +102,9 @@ export default function DayCard({ day, isActive, onClick, onEdit, onRegenerate, 
     setNote(val);
     try {
       if (val.trim()) {
-        localStorage.setItem(`roamly_note_${day.day}`, val);
+        localStorage.setItem(noteKey, val);
       } else {
-        localStorage.removeItem(`roamly_note_${day.day}`);
+        localStorage.removeItem(noteKey);
       }
     } catch { /* ignore */ }
   };
@@ -112,10 +114,10 @@ export default function DayCard({ day, isActive, onClick, onEdit, onRegenerate, 
       onClick={onClick}
       className={`rounded-2xl border transition-all cursor-pointer break-inside-avoid ${
         isPrintMode
-          ? "border-[var(--sand)] bg-white mb-4 cursor-default"
+          ? "border-[var(--sand)] bg-[var(--card)] mb-4 cursor-default"
           : isActive
-            ? "border-[var(--amber)]/40 bg-white shadow-lg shadow-[rgba(212,135,58,0.08)] ring-1 ring-[var(--amber)]/10"
-            : "border-[var(--sand)] bg-white hover:border-[var(--amber)]/30 hover:shadow-md"
+            ? "border-[var(--amber)]/40 bg-[var(--card)] shadow-lg shadow-[rgba(212,135,58,0.08)] ring-1 ring-[var(--amber)]/10"
+            : "border-[var(--sand)] bg-[var(--card)] hover:border-[var(--amber)]/30 hover:shadow-md"
       }`}
     >
       {/* ── Header ────────────────────────────────── */}
@@ -202,7 +204,7 @@ export default function DayCard({ day, isActive, onClick, onEdit, onRegenerate, 
                   key={m.value}
                   disabled={isRegenerating}
                   onClick={() => { onRegenerate(day.day, m.value); setShowModifiers(false); }}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-[var(--sand)] bg-white text-[var(--ink)] hover:border-[var(--amber)] hover:bg-[var(--amber)]/5 transition disabled:opacity-50"
+                  className="text-xs px-3 py-1.5 rounded-lg border border-[var(--sand)] bg-[var(--card)] text-[var(--ink)] hover:border-[var(--amber)] hover:bg-[var(--amber)]/5 transition disabled:opacity-50"
                 >
                   {m.emoji} {m.label}
                 </button>
@@ -319,8 +321,8 @@ export default function DayCard({ day, isActive, onClick, onEdit, onRegenerate, 
                       key={i}
                       className={`flex justify-between items-center px-4 py-2 text-sm ${
                         isTotal
-                          ? "bg-white font-semibold border-t border-[var(--sand)]"
-                          : "border-b border-white/60"
+                          ? "bg-[var(--card)] font-semibold border-t border-[var(--sand)]"
+                          : "border-b border-[var(--card)]/60"
                       }`}
                     >
                       <span className="text-[var(--ink)]">{c.item}</span>
