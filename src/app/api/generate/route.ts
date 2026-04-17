@@ -1,8 +1,13 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { checkUsageLimit, trackUsage } from "@/lib/usage";
+import {
+  checkUsageLimit,
+  trackUsage,
+  UsageCheckUnavailableError,
+} from "@/lib/usage";
 import { env } from "@/lib/env";
+import { destinationSchema } from "@/lib/schemas";
 
 function getClient() {
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -19,26 +24,38 @@ export async function POST(req: NextRequest) {
     // Check usage limits for authenticated users
     const { userId } = await auth();
     if (userId) {
-      const usage = await checkUsageLimit(userId, "generate");
-      if (!usage.allowed) {
-        return new Response(
-          JSON.stringify({
-            error: "Monthly trip limit reached",
-            code: "USAGE_LIMIT",
-            current: usage.current,
-            limit: usage.limit,
-            resetsAt: usage.resetsAt.toISOString(),
-          }),
-          { status: 429, headers: { "Content-Type": "application/json" } }
-        );
+      try {
+        const usage = await checkUsageLimit(userId, "generate");
+        if (!usage.allowed) {
+          return new Response(
+            JSON.stringify({
+              error: "Monthly trip limit reached",
+              code: "USAGE_LIMIT",
+              current: usage.current,
+              limit: usage.limit,
+              resetsAt: usage.resetsAt.toISOString(),
+            }),
+            { status: 429, headers: { "Content-Type": "application/json" } }
+          );
+        }
+      } catch (err) {
+        if (err instanceof UsageCheckUnavailableError) {
+          return new Response(
+            JSON.stringify({
+              error: "Service temporarily unavailable — please try again",
+            }),
+            { status: 503, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        throw err;
       }
     }
 
     const body = await req.json();
-    const { destination, startDate, endDate, travelers, budget, interests } =
+    const { destination: rawDestination, startDate, endDate, travelers, budget, interests } =
       body;
 
-    if (!destination || !startDate || !endDate) {
+    if (!rawDestination || !startDate || !endDate) {
       return new Response(
         JSON.stringify({
           error: "Destination, start date, and end date are required",
@@ -46,6 +63,18 @@ export async function POST(req: NextRequest) {
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
+
+    // Sanitize destination before interpolating it into the Claude prompt.
+    const destParsed = destinationSchema.safeParse(rawDestination);
+    if (!destParsed.success) {
+      return new Response(
+        JSON.stringify({
+          error: destParsed.error.issues[0]?.message ?? "Invalid destination",
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    const destination = destParsed.data;
 
     const start = new Date(startDate);
     const end = new Date(endDate);

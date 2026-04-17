@@ -7,6 +7,7 @@ import {
   favorites,
   packingLists,
   usage,
+  stripeEvents,
 } from "./schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import type { ValidatedTrip } from "@/lib/schemas";
@@ -343,6 +344,25 @@ export async function getPackingList(tripId: string, userId: string) {
     )
     .limit(1);
   return list ?? null;
+}
+
+// ── Stripe Events (idempotency) ────────────────────────
+
+/**
+ * Mark a Stripe event as processed. Returns true when this is the first time
+ * we've seen the event id (caller should proceed), false if it's a duplicate
+ * and the caller should skip side effects.
+ */
+export async function claimStripeEvent(
+  eventId: string,
+  type: string
+): Promise<boolean> {
+  const inserted = await db
+    .insert(stripeEvents)
+    .values({ id: eventId, type })
+    .onConflictDoNothing({ target: stripeEvents.id })
+    .returning({ id: stripeEvents.id });
+  return inserted.length > 0;
 }
 
 // ── Usage Tracking ─────────────────────────────────────

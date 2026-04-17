@@ -1,3 +1,5 @@
+import * as Sentry from "@sentry/nextjs";
+
 type LogLevel = "info" | "warn" | "error";
 
 interface LogEntry {
@@ -18,6 +20,14 @@ function emit(level: LogLevel, msg: string, data?: Record<string, unknown>) {
   if (level === "error") console.error(line);
   else if (level === "warn") console.warn(line);
   else console.log(line);
+
+  // Forward errors/warnings to Sentry when configured. No-op when Sentry.init
+  // was never called (no DSN set), so this is safe in all environments.
+  if (level === "error") {
+    Sentry.captureMessage(msg, { level: "error", extra: data });
+  } else if (level === "warn") {
+    Sentry.captureMessage(msg, { level: "warning", extra: data });
+  }
 }
 
 export const log = {

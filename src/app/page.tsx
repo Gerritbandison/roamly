@@ -529,6 +529,11 @@ export default function Home() {
           Roam<span className="italic text-[var(--amber)]">ly</span>
         </p>
         <p className="text-[0.7rem] text-[var(--muted)] mb-3">Your AI travel companion. Plan smarter, explore more.</p>
+        <div className="flex items-center justify-center gap-4 text-[0.7rem] text-[var(--muted)] mb-2">
+          <a href="/terms" className="hover:text-[var(--amber)] hover:underline">Terms</a>
+          <span className="text-[var(--sand)]">·</span>
+          <a href="/privacy" className="hover:text-[var(--amber)] hover:underline">Privacy</a>
+        </div>
         <div className="flex items-center justify-center gap-4 text-[0.6rem] text-[var(--muted)]/60">
           <span>Prices and details are estimates</span>
           <span className="text-[var(--sand)]">|</span>

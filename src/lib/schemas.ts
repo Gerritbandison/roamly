@@ -91,3 +91,26 @@ export function validateTrip(input: unknown): ValidatedTrip {
   }
   return result.data;
 }
+
+// ── Input sanitization for LLM prompts ─────────────────────────────────
+// Destination is interpolated into the Claude system prompt. Restrict to
+// letters / spaces / common punctuation and the `→` / `->` multi-city
+// separators so a crafted input can't carry prompt-injection payloads.
+// Unicode letters supported via \p{L}\p{M}; digits permitted for names like
+// "Washington D.C." or "São Paulo 2024". Length is capped to keep the prompt
+// within sane bounds.
+const DESTINATION_RE = /^[\p{L}\p{M}\p{N}\s,.'\-→]+(?:->[\p{L}\p{M}\p{N}\s,.'\-→]+)*$/u;
+
+export const destinationSchema = z
+  .string()
+  .trim()
+  .min(2, "Destination is too short")
+  .max(120, "Destination is too long")
+  .regex(DESTINATION_RE, "Destination contains unsupported characters");
+
+export const chatMessageSchema = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z.string().min(1).max(8000),
+});
+
+export const chatHistorySchema = z.array(chatMessageSchema).max(20);

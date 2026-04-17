@@ -1,8 +1,13 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { checkUsageLimit, trackUsage } from "@/lib/usage";
+import {
+  checkUsageLimit,
+  trackUsage,
+  UsageCheckUnavailableError,
+} from "@/lib/usage";
 import { env } from "@/lib/env";
+import { chatHistorySchema } from "@/lib/schemas";
 
 function getClient() {
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -15,12 +20,22 @@ export async function POST(req: NextRequest) {
   try {
     const { userId } = await auth();
     if (userId) {
-      const usage = await checkUsageLimit(userId, "chat");
-      if (!usage.allowed) {
-        return new Response(
-          JSON.stringify({ error: "Monthly chat limit reached", code: "USAGE_LIMIT", current: usage.current, limit: usage.limit, resetsAt: usage.resetsAt.toISOString() }),
-          { status: 429, headers: { "Content-Type": "application/json" } }
-        );
+      try {
+        const usage = await checkUsageLimit(userId, "chat");
+        if (!usage.allowed) {
+          return new Response(
+            JSON.stringify({ error: "Monthly chat limit reached", code: "USAGE_LIMIT", current: usage.current, limit: usage.limit, resetsAt: usage.resetsAt.toISOString() }),
+            { status: 429, headers: { "Content-Type": "application/json" } }
+          );
+        }
+      } catch (err) {
+        if (err instanceof UsageCheckUnavailableError) {
+          return new Response(
+            JSON.stringify({ error: "Service temporarily unavailable — please try again" }),
+            { status: 503, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        throw err;
       }
     }
 
@@ -66,14 +81,19 @@ Key rules:
     // Build message history for multi-turn conversation
     const messages: Array<{ role: "user" | "assistant"; content: string }> = [];
 
-    // Include recent conversation history (last 6 messages max)
-    if (history && Array.isArray(history)) {
-      const recent = history.slice(-6);
-      for (const msg of recent) {
-        messages.push({
-          role: msg.role === "user" ? "user" : "assistant",
-          content: msg.content,
-        });
+    // Include recent conversation history (last 6 messages max).
+    // Validate shape so a malformed client can't inject arbitrary roles or
+    // oversized payloads into the Claude request.
+    if (history !== undefined) {
+      const historyParsed = chatHistorySchema.safeParse(history);
+      if (!historyParsed.success) {
+        return new Response(
+          JSON.stringify({ error: "Invalid chat history" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      for (const msg of historyParsed.data.slice(-6)) {
+        messages.push({ role: msg.role, content: msg.content });
       }
     }
 

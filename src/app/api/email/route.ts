@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
 
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "127.0.0.1";
-  const rl = rateLimit(`email:${ip}`, 3, 60_000); // 3 emails/min
+  const rl = await rateLimit(`email:${ip}`, 3, 60_000); // 3 emails/min
   if (!rl.allowed) {
     return Response.json({ error: "Too many requests" }, { status: 429 });
   }
