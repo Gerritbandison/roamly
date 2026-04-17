@@ -1,7 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest } from "next/server";
 import { getTrip, updateTrip, deleteTrip } from "@/lib/db/queries";
-import type { Trip } from "@/types/itinerary";
+import { validateTrip, TripValidationError } from "@/lib/schemas";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -30,13 +30,26 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
 
   const { id } = await ctx.params;
   const body = await req.json();
-  const { tripData } = body as { tripData: Trip };
+  const { tripData } = body as { tripData: unknown };
 
   if (!tripData) {
     return Response.json({ error: "tripData is required" }, { status: 400 });
   }
 
-  const updated = await updateTrip(id, userId, tripData);
+  let validatedTrip;
+  try {
+    validatedTrip = validateTrip(tripData);
+  } catch (err) {
+    if (err instanceof TripValidationError) {
+      return Response.json(
+        { error: "Invalid trip data", issues: err.issues },
+        { status: 400 }
+      );
+    }
+    throw err;
+  }
+
+  const updated = await updateTrip(id, userId, validatedTrip);
   if (!updated) {
     return Response.json({ error: "Trip not found" }, { status: 404 });
   }

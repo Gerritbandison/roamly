@@ -2,6 +2,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { env } from "@/lib/env";
+import { checkUsageLimit, trackUsage } from "@/lib/usage";
+import { rateLimit } from "@/lib/rateLimit";
 
 function getClient() {
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -17,6 +19,28 @@ export async function POST(req: NextRequest) {
       return new Response(
         JSON.stringify({ error: "Sign in to generate packing lists" }),
         { status: 401, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    const rl = rateLimit(`ai:packing:${userId}`, 10, 60_000);
+    if (!rl.allowed) {
+      return new Response(
+        JSON.stringify({ error: "Too many requests — try again shortly" }),
+        { status: 429, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    const usage = await checkUsageLimit(userId, "packing");
+    if (!usage.allowed) {
+      return new Response(
+        JSON.stringify({
+          error: "Monthly packing list limit reached",
+          code: "USAGE_LIMIT",
+          current: usage.current,
+          limit: usage.limit,
+          resetsAt: usage.resetsAt.toISOString(),
+        }),
+        { status: 429, headers: { "Content-Type": "application/json" } }
       );
     }
 
@@ -98,6 +122,8 @@ Rules:
         throw new Error("Could not parse packing list");
       }
     }
+
+    trackUsage(userId, "packing");
 
     return new Response(JSON.stringify(data), {
       headers: { "Content-Type": "application/json" },

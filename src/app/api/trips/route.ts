@@ -1,7 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest } from "next/server";
 import { createTrip, listTrips, upsertUser } from "@/lib/db/queries";
-import type { Trip } from "@/types/itinerary";
+import { validateTrip, TripValidationError } from "@/lib/schemas";
 
 // GET /api/trips — list user's trips
 export async function GET() {
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
       travelers?: number;
       interests?: string;
     };
-    tripData: Trip;
+    tripData: unknown;
   };
 
   if (!formData || !tripData) {
@@ -42,6 +42,19 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  let validatedTrip;
+  try {
+    validatedTrip = validateTrip(tripData);
+  } catch (err) {
+    if (err instanceof TripValidationError) {
+      return Response.json(
+        { error: "Invalid trip data", issues: err.issues },
+        { status: 400 }
+      );
+    }
+    throw err;
+  }
+
   // Ensure user exists in our DB
   await upsertUser(
     userId,
@@ -49,6 +62,6 @@ export async function POST(req: NextRequest) {
     (sessionClaims?.name as string) ?? null
   );
 
-  const trip = await createTrip(userId, formData, tripData);
+  const trip = await createTrip(userId, formData, validatedTrip);
   return Response.json({ trip }, { status: 201 });
 }

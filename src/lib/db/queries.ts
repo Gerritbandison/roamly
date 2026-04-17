@@ -9,7 +9,11 @@ import {
   usage,
 } from "./schema";
 import { eq, and, desc, sql } from "drizzle-orm";
-import type { Trip } from "@/types/itinerary";
+import type { ValidatedTrip } from "@/lib/schemas";
+
+// Trips are always validated by validateTrip() at the API boundary before
+// reaching this layer — see src/lib/schemas.ts.
+type TripInput = ValidatedTrip;
 
 // ── Users ──────────────────────────────────────────────
 
@@ -61,7 +65,7 @@ export async function createTrip(
     travelers?: number;
     interests?: string;
   },
-  tripData: Trip
+  tripData: TripInput
 ) {
   const [trip] = await db
     .insert(trips)
@@ -115,7 +119,7 @@ export async function listTrips(
 export async function updateTrip(
   tripId: string,
   userId: string,
-  tripData: Trip
+  tripData: TripInput
 ) {
   const [updated] = await db
     .update(trips)

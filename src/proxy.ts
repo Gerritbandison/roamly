@@ -27,7 +27,10 @@ const ALLOWED_ORIGINS = [
 ];
 
 function isAllowedOrigin(origin: string) {
-  if (!origin) return true;
+  // Require an explicit, matching Origin header. Same-origin requests from a
+  // browser may omit Origin on simple GETs, but those don't need CORS
+  // response headers anyway. Never treat missing/unknown origins as trusted.
+  if (!origin) return false;
   return ALLOWED_ORIGINS.some((o) => origin === o);
 }
 

@@ -4,6 +4,8 @@ export const FREE_LIMITS: Record<string, number> = {
   generate: 3,
   regenerate: 10,
   chat: 20,
+  budget: 5,
+  packing: 5,
 };
 
 export interface UsageCheck {
@@ -76,10 +78,12 @@ export async function getUsageSummary(userId: string) {
     const user = await getUser(userId);
     const isPro = user?.plan === "pro";
 
-    const [generate, regenerate, chat] = await Promise.all([
+    const [generate, regenerate, chat, budget, packing] = await Promise.all([
       getMonthlyUsage(userId, "generate"),
       getMonthlyUsage(userId, "regenerate"),
       getMonthlyUsage(userId, "chat"),
+      getMonthlyUsage(userId, "budget"),
+      getMonthlyUsage(userId, "packing"),
     ]);
 
     return {
@@ -98,6 +102,14 @@ export async function getUsageSummary(userId: string) {
           current: chat,
           limit: isPro ? Infinity : FREE_LIMITS.chat,
         },
+        budget: {
+          current: budget,
+          limit: isPro ? Infinity : FREE_LIMITS.budget,
+        },
+        packing: {
+          current: packing,
+          limit: isPro ? Infinity : FREE_LIMITS.packing,
+        },
       },
     };
   } catch {
@@ -109,6 +121,8 @@ export async function getUsageSummary(userId: string) {
         generate: { current: 0, limit: FREE_LIMITS.generate },
         regenerate: { current: 0, limit: FREE_LIMITS.regenerate },
         chat: { current: 0, limit: FREE_LIMITS.chat },
+        budget: { current: 0, limit: FREE_LIMITS.budget },
+        packing: { current: 0, limit: FREE_LIMITS.packing },
       },
     };
   }
