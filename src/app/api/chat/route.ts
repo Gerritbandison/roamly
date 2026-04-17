@@ -78,8 +78,10 @@ Key rules:
 
     const tripContext = JSON.stringify(trip, null, 2);
 
-    // Build message history for multi-turn conversation
-    const messages: Array<{ role: "user" | "assistant"; content: string }> = [];
+    // Build message history for multi-turn conversation.
+    // Each message's content is an array of content blocks so we can apply
+    // cache_control to the large, stable trip JSON.
+    const messages: Anthropic.Messages.MessageParam[] = [];
 
     // Include recent conversation history (last 6 messages max).
     // Validate shape so a malformed client can't inject arbitrary roles or
@@ -97,10 +99,23 @@ Key rules:
       }
     }
 
-    // Add the current message with trip context
+    // The trip JSON is stable across every follow-up message in a chat
+    // session. Put it in its own content block with a 5-minute cache
+    // breakpoint so subsequent chat turns read from the prompt cache
+    // instead of re-ingesting 2-10 KB of trip context each time.
     messages.push({
       role: "user",
-      content: `Here is my current itinerary:\n\n${tripContext}\n\nMy request: ${message}`,
+      content: [
+        {
+          type: "text",
+          text: `Here is my current itinerary:\n\n${tripContext}`,
+          cache_control: { type: "ephemeral" },
+        },
+        {
+          type: "text",
+          text: `My request: ${message}`,
+        },
+      ],
     });
 
     // Stream the response
@@ -118,7 +133,13 @@ Key rules:
             model: env.AI_MODEL,
             max_tokens: 8192,
             messages,
-            system: systemPrompt,
+            system: [
+              {
+                type: "text",
+                text: systemPrompt,
+                cache_control: { type: "ephemeral" },
+              },
+            ],
           });
 
           let fullText = "";

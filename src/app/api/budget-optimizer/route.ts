@@ -160,8 +160,13 @@ Rules:
       model: env.AI_MODEL,
       max_tokens: 2048,
       messages: [{ role: "user", content: prompt }],
-      system:
-        "You are a budget-savvy travel finance advisor. Return only valid JSON. Be specific and practical with your suggestions.",
+      system: [
+        {
+          type: "text",
+          text: "You are a budget-savvy travel finance advisor. Return only valid JSON. Be specific and practical with your suggestions.",
+          cache_control: { type: "ephemeral" },
+        },
+      ],
     });
 
     const textBlock = response.content.find((b) => b.type === "text");

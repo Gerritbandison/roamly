@@ -70,7 +70,10 @@ export async function POST(req: NextRequest) {
       ? `The user wants a ${modifier} version of this day.`
       : "The user wants a completely fresh take on this day.";
 
-    const systemPrompt = `You are Roamly's trip planning AI. You are regenerating a SINGLE day of an existing ${trip.destination} itinerary. ${modifierText}
+    // System is split into a stable rules block (cached) + a small volatile
+    // block carrying the per-request destination and modifier. Putting
+    // volatile content AFTER stable content is what makes the cache usable.
+    const systemRules = `You are Roamly's trip planning AI. You regenerate a SINGLE day of an existing itinerary.
 
 Rules:
 - Return ONLY a valid JSON object for the regenerated day — no markdown, no explanation, no wrapping
@@ -82,10 +85,10 @@ Rules:
 - Keep the same budget level and travel style as the rest of the trip
 - Ensure continuity with surrounding days (don't revisit places already covered)`;
 
-    const userMessage = `Here is the full trip for context:
-${JSON.stringify(trip, null, 2)}
+    const systemTail = `Destination: ${trip.destination}. ${modifierText}`;
 
-${prevDay ? `The day before (Day ${prevDay.day}): ${prevDay.theme} — ends with: ${prevDay.evening}` : "This is the first day of the trip."}
+    const tripJson = JSON.stringify(trip, null, 2);
+    const contextTail = `${prevDay ? `The day before (Day ${prevDay.day}): ${prevDay.theme} — ends with: ${prevDay.evening}` : "This is the first day of the trip."}
 ${nextDay ? `The day after (Day ${nextDay.day}): ${nextDay.theme} — starts with: ${nextDay.morning}` : "This is the last day of the trip."}
 
 Now regenerate Day ${dayNumber} (currently: "${currentDay.theme}"). Return ONLY the JSON object for this day.`;
@@ -106,8 +109,27 @@ Now regenerate Day ${dayNumber} (currently: "${currentDay.theme}"). Return ONLY 
           const stream = getClient().messages.stream({
             model: env.AI_MODEL,
             max_tokens: 4096,
-            messages: [{ role: "user", content: userMessage }],
-            system: systemPrompt,
+            system: [
+              {
+                type: "text",
+                text: systemRules,
+                cache_control: { type: "ephemeral" },
+              },
+              { type: "text", text: systemTail },
+            ],
+            messages: [
+              {
+                role: "user",
+                content: [
+                  {
+                    type: "text",
+                    text: `Here is the full trip for context:\n${tripJson}`,
+                    cache_control: { type: "ephemeral" },
+                  },
+                  { type: "text", text: contextTail },
+                ],
+              },
+            ],
           });
 
           let fullText = "";

@@ -116,8 +116,13 @@ Rules:
       model: env.AI_MODEL,
       max_tokens: 2048,
       messages: [{ role: "user", content: prompt }],
-      system:
-        "You are a practical travel packing expert. Return only valid JSON.",
+      system: [
+        {
+          type: "text",
+          text: "You are a practical travel packing expert. Return only valid JSON.",
+          cache_control: { type: "ephemeral" },
+        },
+      ],
     });
 
     const textBlock = response.content.find((b) => b.type === "text");
