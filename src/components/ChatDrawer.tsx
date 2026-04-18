@@ -96,11 +96,12 @@ export default function ChatDrawer({ trip, isOpen, onClose, onTripUpdate }: Chat
     setStreamingText("");
 
     try {
-      // Build history from previous messages (exclude updates)
-      const history = messages.map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
+      // Build history from previous messages. Drop empty content — if Claude
+      // returned only a <trip_update> block, displayText can be "", which the
+      // server-side chatHistorySchema (min(1)) would reject.
+      const history = messages
+        .map((m) => ({ role: m.role, content: m.content }))
+        .filter((m) => m.content.trim().length > 0);
 
       const res = await fetch("/api/chat", {
         method: "POST",

@@ -26,7 +26,7 @@ export const env = {
   get RESEND_API_KEY() { return process.env.RESEND_API_KEY ?? null; },
   get NEXT_PUBLIC_URL() { return process.env.NEXT_PUBLIC_URL ?? "https://roamly.vercel.app"; },
   // AI model — override to switch models without redeploying
-  get AI_MODEL() { return process.env.AI_MODEL ?? "claude-sonnet-4-20250514"; },
+  get AI_MODEL() { return process.env.AI_MODEL ?? "claude-sonnet-4-6"; },
   // Stripe (Phase 4 — optional until billing is enabled)
   get STRIPE_SECRET_KEY() { return process.env.STRIPE_SECRET_KEY ?? null; },
   get STRIPE_WEBHOOK_SECRET() { return process.env.STRIPE_WEBHOOK_SECRET ?? null; },

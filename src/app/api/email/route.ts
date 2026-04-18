@@ -4,10 +4,13 @@ import { auth } from "@clerk/nextjs/server";
 import { env } from "@/lib/env";
 import { rateLimit } from "@/lib/rateLimit";
 import { log } from "@/lib/logger";
+import { emailDestinationSchema } from "@/lib/schemas";
 
 const BodySchema = z.object({
   to: z.string().email("Invalid email address"),
-  destination: z.string().min(1).max(100),
+  // Reject control chars / newlines to prevent email-header injection via
+  // the subject line (subject is built from this value in buildHtml caller).
+  destination: emailDestinationSchema,
   duration: z.number().int().min(1).max(21),
   budgetEstimate: z.string().max(100),
   summary: z.string().max(8000), // plain-text summary of the itinerary
@@ -58,7 +61,7 @@ export async function POST(req: NextRequest) {
 
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "127.0.0.1";
-  const rl = rateLimit(`email:${ip}`, 3, 60_000); // 3 emails/min
+  const rl = await rateLimit(`email:${ip}`, 3, 60_000); // 3 emails/min
   if (!rl.allowed) {
     return Response.json({ error: "Too many requests" }, { status: 429 });
   }

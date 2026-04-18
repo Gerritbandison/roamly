@@ -1,6 +1,11 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest } from "next/server";
-import { upsertPackingList, getPackingList } from "@/lib/db/queries";
+import {
+  upsertPackingList,
+  getPackingList,
+  userOwnsTrip,
+} from "@/lib/db/queries";
+import { readJson, BODY_LIMITS, PayloadTooLargeError } from "@/lib/reqGuard";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -24,15 +29,28 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
   }
 
   const { id } = await ctx.params;
-  const { categories } = (await req.json()) as { categories: unknown };
 
-  if (!categories) {
+  if (!(await userOwnsTrip(id, userId))) {
+    return Response.json({ error: "Trip not found" }, { status: 404 });
+  }
+
+  let body: { categories: unknown };
+  try {
+    body = await readJson<{ categories: unknown }>(req, BODY_LIMITS.medium);
+  } catch (err) {
+    if (err instanceof PayloadTooLargeError) {
+      return Response.json({ error: "Payload too large" }, { status: 413 });
+    }
+    return Response.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  if (!body.categories) {
     return Response.json(
       { error: "categories is required" },
       { status: 400 }
     );
   }
 
-  const list = await upsertPackingList(id, userId, categories);
+  const list = await upsertPackingList(id, userId, body.categories);
   return Response.json({ packingList: list });
 }

@@ -7,9 +7,14 @@ import {
   favorites,
   packingLists,
   usage,
+  stripeEvents,
 } from "./schema";
 import { eq, and, desc, sql } from "drizzle-orm";
-import type { Trip } from "@/types/itinerary";
+import type { ValidatedTrip } from "@/lib/schemas";
+
+// Trips are always validated by validateTrip() at the API boundary before
+// reaching this layer — see src/lib/schemas.ts.
+type TripInput = ValidatedTrip;
 
 // ── Users ──────────────────────────────────────────────
 
@@ -61,7 +66,7 @@ export async function createTrip(
     travelers?: number;
     interests?: string;
   },
-  tripData: Trip
+  tripData: TripInput
 ) {
   const [trip] = await db
     .insert(trips)
@@ -115,7 +120,7 @@ export async function listTrips(
 export async function updateTrip(
   tripId: string,
   userId: string,
-  tripData: Trip
+  tripData: TripInput
 ) {
   const [updated] = await db
     .update(trips)
@@ -197,6 +202,24 @@ export async function revokeShareLink(tripId: string, userId: string) {
     .set({ isPublic: false })
     .where(eq(sharedTrips.tripId, tripId));
   return true;
+}
+
+/**
+ * Returns true if the given user owns the given trip. Use before any write
+ * that references trip_id from a URL parameter so callers can't pollute
+ * another user's trip (IDOR defense on sub-resources like notes, favorites,
+ * and packing lists).
+ */
+export async function userOwnsTrip(
+  tripId: string,
+  userId: string
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: trips.id })
+    .from(trips)
+    .where(and(eq(trips.id, tripId), eq(trips.userId, userId)))
+    .limit(1);
+  return !!row;
 }
 
 // ── Notes ──────────────────────────────────────────────
@@ -339,6 +362,25 @@ export async function getPackingList(tripId: string, userId: string) {
     )
     .limit(1);
   return list ?? null;
+}
+
+// ── Stripe Events (idempotency) ────────────────────────
+
+/**
+ * Mark a Stripe event as processed. Returns true when this is the first time
+ * we've seen the event id (caller should proceed), false if it's a duplicate
+ * and the caller should skip side effects.
+ */
+export async function claimStripeEvent(
+  eventId: string,
+  type: string
+): Promise<boolean> {
+  const inserted = await db
+    .insert(stripeEvents)
+    .values({ id: eventId, type })
+    .onConflictDoNothing({ target: stripeEvents.id })
+    .returning({ id: stripeEvents.id });
+  return inserted.length > 0;
 }
 
 // ── Usage Tracking ─────────────────────────────────────

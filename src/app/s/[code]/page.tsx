@@ -4,38 +4,49 @@ import Link from "next/link";
 import { getSharedTrip } from "@/lib/db/queries";
 import SharedTripView from "./SharedTripView";
 import type { Trip } from "@/types/itinerary";
+import { heroImageFor } from "@/lib/destinationImages";
 
 type PageProps = { params: Promise<{ code: string }> };
+
+const BASE_URL = process.env.NEXT_PUBLIC_URL ?? "https://roamly.vercel.app";
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { code } = await params;
 
   let title = "Shared Trip — Roamly";
   let description = "Check out this AI-generated travel itinerary on Roamly.";
+  let image = heroImageFor("", { width: 1200, height: 630 });
 
   try {
     const shared = await getSharedTrip(code);
     if (shared) {
-      title = `${shared.destination} — ${shared.durationDays} Day Trip | Roamly`;
-      description = `Explore a ${shared.durationDays}-day ${shared.budget} itinerary for ${shared.destination}, planned by AI.`;
+      title = `${shared.destination} · ${shared.durationDays}-day ${shared.budget} itinerary — Roamly`;
+      description = `A day-by-day ${shared.durationDays}-day ${shared.budget} trip to ${shared.destination}, planned by AI. Real places, real prices, local tips.`;
+      image = heroImageFor(shared.destination, { width: 1200, height: 630 });
     }
   } catch {
-    // DB not connected yet — use defaults
+    // DB not connected yet — fall through to defaults.
   }
+
+  const canonical = `${BASE_URL}/s/${code}`;
 
   return {
     title,
     description,
+    alternates: { canonical },
     openGraph: {
       title,
       description,
-      type: "website",
+      url: canonical,
+      type: "article",
       siteName: "Roamly",
+      images: [{ url: image, width: 1200, height: 630, alt: title }],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
+      images: [image],
     },
   };
 }

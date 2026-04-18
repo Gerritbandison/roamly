@@ -134,6 +134,16 @@ export const packingLists = pgTable(
   ]
 );
 
+// ── Stripe Events (idempotency) ────────────────────────
+// Stripe may deliver the same webhook multiple times. Before processing an
+// event, insert its id here; the unique constraint turns duplicate deliveries
+// into a no-op (`ON CONFLICT DO NOTHING`).
+export const stripeEvents = pgTable("stripe_events", {
+  id: text("id").primaryKey(), // Stripe event id, e.g. evt_1P...
+  type: text("type").notNull(),
+  processedAt: timestamp("processed_at").defaultNow().notNull(),
+});
+
 // ── Usage Tracking ─────────────────────────────────────
 export const usage = pgTable(
   "usage",

@@ -1,8 +1,14 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { checkUsageLimit, trackUsage } from "@/lib/usage";
+import {
+  checkUsageLimit,
+  trackUsage,
+  UsageCheckUnavailableError,
+} from "@/lib/usage";
 import { env } from "@/lib/env";
+import { chatHistorySchema, chatMessageContentSchema } from "@/lib/schemas";
+import { readJson, BODY_LIMITS, PayloadTooLargeError } from "@/lib/reqGuard";
 
 function getClient() {
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -15,24 +21,66 @@ export async function POST(req: NextRequest) {
   try {
     const { userId } = await auth();
     if (userId) {
-      const usage = await checkUsageLimit(userId, "chat");
-      if (!usage.allowed) {
-        return new Response(
-          JSON.stringify({ error: "Monthly chat limit reached", code: "USAGE_LIMIT", current: usage.current, limit: usage.limit, resetsAt: usage.resetsAt.toISOString() }),
-          { status: 429, headers: { "Content-Type": "application/json" } }
-        );
+      try {
+        const usage = await checkUsageLimit(userId, "chat");
+        if (!usage.allowed) {
+          return new Response(
+            JSON.stringify({ error: "Monthly chat limit reached", code: "USAGE_LIMIT", current: usage.current, limit: usage.limit, resetsAt: usage.resetsAt.toISOString() }),
+            { status: 429, headers: { "Content-Type": "application/json" } }
+          );
+        }
+      } catch (err) {
+        if (err instanceof UsageCheckUnavailableError) {
+          return new Response(
+            JSON.stringify({ error: "Service temporarily unavailable — please try again" }),
+            { status: 503, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        throw err;
       }
     }
 
-    const body = await req.json();
-    const { message, trip, history } = body;
-
-    if (!message || !trip) {
+    let body: { message?: unknown; trip?: unknown; history?: unknown };
+    try {
+      body = await readJson(req, BODY_LIMITS.medium);
+    } catch (err) {
+      if (err instanceof PayloadTooLargeError) {
+        return new Response(
+          JSON.stringify({ error: "Payload too large" }),
+          { status: 413, headers: { "Content-Type": "application/json" } }
+        );
+      }
       return new Response(
-        JSON.stringify({ error: "Message and trip data are required" }),
+        JSON.stringify({ error: "Invalid JSON" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
+
+    // Validate user message — length-cap and strip control chars so a user
+    // can't inject fake "assistant:" / "system:" directives via newlines.
+    const msgParsed = chatMessageContentSchema.safeParse(body.message);
+    if (!msgParsed.success) {
+      return new Response(
+        JSON.stringify({
+          error: msgParsed.error.issues[0]?.message ?? "Invalid message",
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    const message = msgParsed.data;
+
+    // Body-size guard (via readJson above) already bounds payload. We don't
+    // fully validate trip shape here because in-flight edits can include
+    // partially-populated trips from older localStorage entries.
+    if (body.trip == null || typeof body.trip !== "object") {
+      return new Response(
+        JSON.stringify({ error: "Trip data is required" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    const trip = body.trip;
+
+    const history = body.history;
 
     const systemPrompt = `You are Roamly's trip planning assistant. The user has an existing itinerary and wants to modify or ask questions about it. You have two modes:
 
@@ -63,24 +111,44 @@ Key rules:
 
     const tripContext = JSON.stringify(trip, null, 2);
 
-    // Build message history for multi-turn conversation
-    const messages: Array<{ role: "user" | "assistant"; content: string }> = [];
+    // Build message history for multi-turn conversation.
+    // Each message's content is an array of content blocks so we can apply
+    // cache_control to the large, stable trip JSON.
+    const messages: Anthropic.Messages.MessageParam[] = [];
 
-    // Include recent conversation history (last 6 messages max)
-    if (history && Array.isArray(history)) {
-      const recent = history.slice(-6);
-      for (const msg of recent) {
-        messages.push({
-          role: msg.role === "user" ? "user" : "assistant",
-          content: msg.content,
-        });
+    // Include recent conversation history (last 6 messages max).
+    // Validate shape so a malformed client can't inject arbitrary roles or
+    // oversized payloads into the Claude request.
+    if (history !== undefined) {
+      const historyParsed = chatHistorySchema.safeParse(history);
+      if (!historyParsed.success) {
+        return new Response(
+          JSON.stringify({ error: "Invalid chat history" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      for (const msg of historyParsed.data.slice(-6)) {
+        messages.push({ role: msg.role, content: msg.content });
       }
     }
 
-    // Add the current message with trip context
+    // The trip JSON is stable across every follow-up message in a chat
+    // session. Put it in its own content block with a 5-minute cache
+    // breakpoint so subsequent chat turns read from the prompt cache
+    // instead of re-ingesting 2-10 KB of trip context each time.
     messages.push({
       role: "user",
-      content: `Here is my current itinerary:\n\n${tripContext}\n\nMy request: ${message}`,
+      content: [
+        {
+          type: "text",
+          text: `Here is my current itinerary:\n\n${tripContext}`,
+          cache_control: { type: "ephemeral" },
+        },
+        {
+          type: "text",
+          text: `My request: ${message}`,
+        },
+      ],
     });
 
     // Stream the response
@@ -98,7 +166,13 @@ Key rules:
             model: env.AI_MODEL,
             max_tokens: 8192,
             messages,
-            system: systemPrompt,
+            system: [
+              {
+                type: "text",
+                text: systemPrompt,
+                cache_control: { type: "ephemeral" },
+              },
+            ],
           });
 
           let fullText = "";

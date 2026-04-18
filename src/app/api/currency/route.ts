@@ -36,7 +36,7 @@ async function getRates(): Promise<Record<string, number>> {
 export async function GET(req: NextRequest) {
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "127.0.0.1";
-  const rl = rateLimit(`currency:${ip}`, 60, 60_000);
+  const rl = await rateLimit(`currency:${ip}`, 60, 60_000);
   if (!rl.allowed) {
     return Response.json({ error: "Too many requests" }, { status: 429 });
   }

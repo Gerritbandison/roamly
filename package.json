@@ -12,6 +12,7 @@
     "@anthropic-ai/sdk": "^0.81.0",
     "@clerk/nextjs": "^7.0.12",
     "@neondatabase/serverless": "^1.0.2",
+    "@sentry/nextjs": "^10.49.0",
     "@vercel/analytics": "^2.0.1",
     "drizzle-orm": "^0.45.2",
     "html2canvas": "^1.4.1",
@@ -22,7 +23,8 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-leaflet": "^5.0.0",
-    "stripe": "^22.0.1"
+    "stripe": "^22.0.1",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

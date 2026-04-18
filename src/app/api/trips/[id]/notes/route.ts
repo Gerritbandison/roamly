@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest } from "next/server";
-import { upsertNote, getNotesForTrip } from "@/lib/db/queries";
+import { upsertNote, getNotesForTrip, userOwnsTrip } from "@/lib/db/queries";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -24,15 +24,24 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
   }
 
   const { id } = await ctx.params;
+
+  // IDOR defense: don't let a user write notes that reference someone else's
+  // trip_id (the notes would be scoped to the attacker, but would pollute the
+  // table and leak trip existence via side channels).
+  if (!(await userOwnsTrip(id, userId))) {
+    return Response.json({ error: "Trip not found" }, { status: 404 });
+  }
+
   const { dayNumber, content } = (await req.json()) as {
     dayNumber: number;
     content: string;
   };
 
-  if (typeof dayNumber !== "number") {
-    return Response.json({ error: "dayNumber is required" }, { status: 400 });
+  if (typeof dayNumber !== "number" || !Number.isInteger(dayNumber) || dayNumber < 1 || dayNumber > 30) {
+    return Response.json({ error: "dayNumber must be an integer between 1 and 30" }, { status: 400 });
   }
 
-  const note = await upsertNote(id, userId, dayNumber, content ?? "");
+  const safeContent = typeof content === "string" ? content.slice(0, 4000) : "";
+  const note = await upsertNote(id, userId, dayNumber, safeContent);
   return Response.json({ note });
 }

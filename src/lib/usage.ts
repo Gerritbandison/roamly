@@ -1,9 +1,12 @@
 import { getUser, getMonthlyUsage, recordUsage } from "@/lib/db/queries";
+import { log } from "@/lib/logger";
 
 export const FREE_LIMITS: Record<string, number> = {
   generate: 3,
   regenerate: 10,
   chat: 20,
+  budget: 5,
+  packing: 5,
 };
 
 export interface UsageCheck {
@@ -23,6 +26,14 @@ function getMonthResetDate(): Date {
  * Check if a user can perform an action.
  * Pro users always pass. Free users are checked against monthly limits.
  */
+export class UsageCheckUnavailableError extends Error {
+  constructor(cause: unknown) {
+    super("Usage check unavailable");
+    this.name = "UsageCheckUnavailableError";
+    this.cause = cause;
+  }
+}
+
 export async function checkUsageLimit(
   userId: string,
   action: string
@@ -30,29 +41,43 @@ export async function checkUsageLimit(
   const limit = FREE_LIMITS[action] ?? 10;
   const resetsAt = getMonthResetDate();
 
-  // Check if user is on pro plan
+  // Fail closed: if the DB is unreachable we cannot confirm the user is under
+  // their quota, so we must not let the AI call proceed. Callers should map
+  // UsageCheckUnavailableError to an HTTP 503 with a "try again" message.
+  let user;
   try {
-    const user = await getUser(userId);
-    if (user?.plan === "pro") {
-      return { allowed: true, current: 0, limit: Infinity, resetsAt };
-    }
-  } catch {
-    // DB not connected — allow action (graceful degradation)
-    return { allowed: true, current: 0, limit, resetsAt };
+    user = await getUser(userId);
+  } catch (err) {
+    log.error("usage_check_db_error", {
+      userId,
+      action,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw new UsageCheckUnavailableError(err);
   }
 
-  try {
-    const current = await getMonthlyUsage(userId, action);
-    return {
-      allowed: current < limit,
-      current,
-      limit,
-      resetsAt,
-    };
-  } catch {
-    // DB error — allow action
-    return { allowed: true, current: 0, limit, resetsAt };
+  if (user?.plan === "pro") {
+    return { allowed: true, current: 0, limit: Infinity, resetsAt };
   }
+
+  let current: number;
+  try {
+    current = await getMonthlyUsage(userId, action);
+  } catch (err) {
+    log.error("usage_count_db_error", {
+      userId,
+      action,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw new UsageCheckUnavailableError(err);
+  }
+
+  return {
+    allowed: current < limit,
+    current,
+    limit,
+    resetsAt,
+  };
 }
 
 /**
@@ -76,10 +101,12 @@ export async function getUsageSummary(userId: string) {
     const user = await getUser(userId);
     const isPro = user?.plan === "pro";
 
-    const [generate, regenerate, chat] = await Promise.all([
+    const [generate, regenerate, chat, budget, packing] = await Promise.all([
       getMonthlyUsage(userId, "generate"),
       getMonthlyUsage(userId, "regenerate"),
       getMonthlyUsage(userId, "chat"),
+      getMonthlyUsage(userId, "budget"),
+      getMonthlyUsage(userId, "packing"),
     ]);
 
     return {
@@ -98,6 +125,14 @@ export async function getUsageSummary(userId: string) {
           current: chat,
           limit: isPro ? Infinity : FREE_LIMITS.chat,
         },
+        budget: {
+          current: budget,
+          limit: isPro ? Infinity : FREE_LIMITS.budget,
+        },
+        packing: {
+          current: packing,
+          limit: isPro ? Infinity : FREE_LIMITS.packing,
+        },
       },
     };
   } catch {
@@ -109,6 +144,8 @@ export async function getUsageSummary(userId: string) {
         generate: { current: 0, limit: FREE_LIMITS.generate },
         regenerate: { current: 0, limit: FREE_LIMITS.regenerate },
         chat: { current: 0, limit: FREE_LIMITS.chat },
+        budget: { current: 0, limit: FREE_LIMITS.budget },
+        packing: { current: 0, limit: FREE_LIMITS.packing },
       },
     };
   }

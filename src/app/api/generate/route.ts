@@ -1,8 +1,15 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { checkUsageLimit, trackUsage } from "@/lib/usage";
+import {
+  checkUsageLimit,
+  trackUsage,
+  UsageCheckUnavailableError,
+} from "@/lib/usage";
 import { env } from "@/lib/env";
+import { destinationSchema, interestsSchema } from "@/lib/schemas";
+import { rateLimit } from "@/lib/rateLimit";
+import { readJson, BODY_LIMITS, PayloadTooLargeError } from "@/lib/reqGuard";
 
 function getClient() {
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -16,29 +23,82 @@ function getClient() {
 // ── Route ────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
-    // Check usage limits for authenticated users
+    // Check usage limits for authenticated users; rate-limit anonymous
+    // callers by IP so a single visitor can't burn the Anthropic budget.
     const { userId } = await auth();
     if (userId) {
-      const usage = await checkUsageLimit(userId, "generate");
-      if (!usage.allowed) {
+      try {
+        const usage = await checkUsageLimit(userId, "generate");
+        if (!usage.allowed) {
+          return new Response(
+            JSON.stringify({
+              error: "Monthly trip limit reached",
+              code: "USAGE_LIMIT",
+              current: usage.current,
+              limit: usage.limit,
+              resetsAt: usage.resetsAt.toISOString(),
+            }),
+            { status: 429, headers: { "Content-Type": "application/json" } }
+          );
+        }
+      } catch (err) {
+        if (err instanceof UsageCheckUnavailableError) {
+          return new Response(
+            JSON.stringify({
+              error: "Service temporarily unavailable — please try again",
+            }),
+            { status: 503, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        throw err;
+      }
+    } else {
+      const ip =
+        req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
+      // 3 anonymous generations per hour per IP. Encourages signup without
+      // blocking one-shot demo users.
+      const rl = await rateLimit(`ai:generate:anon:${ip}`, 3, 60 * 60_000);
+      if (!rl.allowed) {
         return new Response(
           JSON.stringify({
-            error: "Monthly trip limit reached",
-            code: "USAGE_LIMIT",
-            current: usage.current,
-            limit: usage.limit,
-            resetsAt: usage.resetsAt.toISOString(),
+            error: "Hourly generation limit reached — sign in for a higher quota",
+            code: "ANON_RATE_LIMIT",
+            resetsAt: new Date(rl.resetAt).toISOString(),
           }),
           { status: 429, headers: { "Content-Type": "application/json" } }
         );
       }
     }
 
-    const body = await req.json();
-    const { destination, startDate, endDate, travelers, budget, interests } =
-      body;
+    let body: {
+      destination?: unknown;
+      startDate?: unknown;
+      endDate?: unknown;
+      travelers?: unknown;
+      budget?: unknown;
+      interests?: unknown;
+    };
+    try {
+      body = await readJson(req, BODY_LIMITS.small);
+    } catch (err) {
+      if (err instanceof PayloadTooLargeError) {
+        return new Response(
+          JSON.stringify({ error: "Payload too large" }),
+          { status: 413, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      return new Response(
+        JSON.stringify({ error: "Invalid JSON" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    const { startDate, endDate, travelers, budget } = body;
 
-    if (!destination || !startDate || !endDate) {
+    if (
+      !body.destination ||
+      typeof startDate !== "string" ||
+      typeof endDate !== "string"
+    ) {
       return new Response(
         JSON.stringify({
           error: "Destination, start date, and end date are required",
@@ -46,6 +106,30 @@ export async function POST(req: NextRequest) {
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
+
+    // Sanitize destination before interpolating it into the Claude prompt.
+    const destParsed = destinationSchema.safeParse(body.destination);
+    if (!destParsed.success) {
+      return new Response(
+        JSON.stringify({
+          error: destParsed.error.issues[0]?.message ?? "Invalid destination",
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    const destination = destParsed.data;
+
+    // Sanitize interests similarly (length cap + strip control chars).
+    const interestsParsed = interestsSchema.safeParse(body.interests ?? undefined);
+    if (!interestsParsed.success) {
+      return new Response(
+        JSON.stringify({
+          error: interestsParsed.error.issues[0]?.message ?? "Invalid interests",
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    const interests = interestsParsed.data;
 
     const start = new Date(startDate);
     const end = new Date(endDate);
@@ -67,7 +151,22 @@ export async function POST(req: NextRequest) {
       ? destination.split(/→|->/).map((s: string) => s.trim()).filter(Boolean)
       : [destination];
 
-    const multiCityRules = isMultiCity
+    // Stable base — identical on every generate request, goes first so the
+    // prompt cache can hit on it. Volatile per-trip multi-city rules follow.
+    const systemBase = `You are an expert travel planner who creates detailed, opinionated, and genuinely useful day-by-day itineraries. Your style is specific and local — you name actual restaurants, give real prices, mention the best exchange offices, warn about tourist traps, and write with personality. You sound like a well-traveled friend who's been there, not a guidebook.
+
+Key rules:
+- Name SPECIFIC places, not generic categories. "Confeitaria Nacional on Praça da Figueira" not "a local bakery"
+- Include real prices in local currency AND USD equivalents
+- Flag must-try dishes with must_try: true — be selective, max 1-2 per day
+- Each day's costs should itemize accommodation, food, transport, and activities separately
+- The region field groups days geographically (e.g. "Northern Albania", "Central Lisbon")
+- Accommodation should include specific hostel/hotel names with per-night prices
+- Tips should be genuinely useful and specific — not "wear comfortable shoes"
+
+You MUST respond with valid JSON only — no markdown, no code fences, no extra text. Just the JSON object.`;
+
+    const multiCityTail = isMultiCity
       ? `\n\nMULTI-CITY TRIP RULES (this trip visits ${stops.length} stops: ${stops.join(" → ")}):
 - Allocate days intelligently across stops based on how much each city has to offer
 - Include dedicated TRAVEL DAYS between cities — theme them as "Travel: [City A] → [City B]"
@@ -77,19 +176,6 @@ export async function POST(req: NextRequest) {
 - Include practical transfer info (which train station, which terminal, luggage storage)
 - Travel days can still have activities — e.g. morning in departure city, evening in arrival city`
       : "";
-
-    const systemPrompt = `You are an expert travel planner who creates detailed, opinionated, and genuinely useful day-by-day itineraries. Your style is specific and local — you name actual restaurants, give real prices, mention the best exchange offices, warn about tourist traps, and write with personality. You sound like a well-traveled friend who's been there, not a guidebook.
-
-Key rules:
-- Name SPECIFIC places, not generic categories. "Confeitaria Nacional on Praça da Figueira" not "a local bakery"
-- Include real prices in local currency AND USD equivalents
-- Flag must-try dishes with must_try: true — be selective, max 1-2 per day
-- Each day's costs should itemize accommodation, food, transport, and activities separately
-- The region field groups days geographically (e.g. "Northern Albania", "Central Lisbon")
-- Accommodation should include specific hostel/hotel names with per-night prices
-- Tips should be genuinely useful and specific — not "wear comfortable shoes"${multiCityRules}
-
-You MUST respond with valid JSON only — no markdown, no code fences, no extra text. Just the JSON object.`;
 
     const userPrompt = `Plan a ${days}-day trip to ${destination}.${isMultiCity ? `\n\nThis is a MULTI-CITY trip visiting: ${stops.join(" → ")}. Distribute the ${days} days across all stops, with travel days between them.` : ""}
 
@@ -174,7 +260,16 @@ Requirements:
             model: env.AI_MODEL,
             max_tokens: maxTokens,
             messages: [{ role: "user", content: userPrompt }],
-            system: systemPrompt,
+            system: [
+              {
+                type: "text",
+                text: systemBase,
+                cache_control: { type: "ephemeral" },
+              },
+              ...(multiCityTail
+                ? [{ type: "text" as const, text: multiCityTail }]
+                : []),
+            ],
           });
 
           let fullText = "";
