@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
+import { scrubEvent } from "@/lib/sentryScrub";
 
 // Runs once per runtime (nodejs, edge) on boot. Kept conditional on SENTRY_DSN
 // so local dev and environments that haven't configured Sentry stay silent.
@@ -12,12 +13,16 @@ export async function register() {
       dsn,
       environment: process.env.VERCEL_ENV || "development",
       tracesSampleRate: 0.1,
+      sendDefaultPii: false,
+      beforeSend: scrubEvent,
     });
   } else if (runtime === "edge") {
     Sentry.init({
       dsn,
       environment: process.env.VERCEL_ENV || "development",
       tracesSampleRate: 0.1,
+      sendDefaultPii: false,
+      beforeSend: scrubEvent,
     });
   }
 }

@@ -7,8 +7,9 @@ import {
   UsageCheckUnavailableError,
 } from "@/lib/usage";
 import { env } from "@/lib/env";
-import { destinationSchema } from "@/lib/schemas";
+import { destinationSchema, interestsSchema } from "@/lib/schemas";
 import { rateLimit } from "@/lib/rateLimit";
+import { readJson, BODY_LIMITS, PayloadTooLargeError } from "@/lib/reqGuard";
 
 function getClient() {
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -69,11 +70,35 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const body = await req.json();
-    const { destination: rawDestination, startDate, endDate, travelers, budget, interests } =
-      body;
+    let body: {
+      destination?: unknown;
+      startDate?: unknown;
+      endDate?: unknown;
+      travelers?: unknown;
+      budget?: unknown;
+      interests?: unknown;
+    };
+    try {
+      body = await readJson(req, BODY_LIMITS.small);
+    } catch (err) {
+      if (err instanceof PayloadTooLargeError) {
+        return new Response(
+          JSON.stringify({ error: "Payload too large" }),
+          { status: 413, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      return new Response(
+        JSON.stringify({ error: "Invalid JSON" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    const { startDate, endDate, travelers, budget } = body;
 
-    if (!rawDestination || !startDate || !endDate) {
+    if (
+      !body.destination ||
+      typeof startDate !== "string" ||
+      typeof endDate !== "string"
+    ) {
       return new Response(
         JSON.stringify({
           error: "Destination, start date, and end date are required",
@@ -83,7 +108,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Sanitize destination before interpolating it into the Claude prompt.
-    const destParsed = destinationSchema.safeParse(rawDestination);
+    const destParsed = destinationSchema.safeParse(body.destination);
     if (!destParsed.success) {
       return new Response(
         JSON.stringify({
@@ -93,6 +118,18 @@ export async function POST(req: NextRequest) {
       );
     }
     const destination = destParsed.data;
+
+    // Sanitize interests similarly (length cap + strip control chars).
+    const interestsParsed = interestsSchema.safeParse(body.interests ?? undefined);
+    if (!interestsParsed.success) {
+      return new Response(
+        JSON.stringify({
+          error: interestsParsed.error.issues[0]?.message ?? "Invalid interests",
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    const interests = interestsParsed.data;
 
     const start = new Date(startDate);
     const end = new Date(endDate);

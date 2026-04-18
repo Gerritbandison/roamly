@@ -7,7 +7,8 @@ import {
   UsageCheckUnavailableError,
 } from "@/lib/usage";
 import { env } from "@/lib/env";
-import { chatHistorySchema } from "@/lib/schemas";
+import { chatHistorySchema, chatMessageContentSchema } from "@/lib/schemas";
+import { readJson, BODY_LIMITS, PayloadTooLargeError } from "@/lib/reqGuard";
 
 function getClient() {
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -39,15 +40,47 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const body = await req.json();
-    const { message, trip, history } = body;
-
-    if (!message || !trip) {
+    let body: { message?: unknown; trip?: unknown; history?: unknown };
+    try {
+      body = await readJson(req, BODY_LIMITS.medium);
+    } catch (err) {
+      if (err instanceof PayloadTooLargeError) {
+        return new Response(
+          JSON.stringify({ error: "Payload too large" }),
+          { status: 413, headers: { "Content-Type": "application/json" } }
+        );
+      }
       return new Response(
-        JSON.stringify({ error: "Message and trip data are required" }),
+        JSON.stringify({ error: "Invalid JSON" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
+
+    // Validate user message — length-cap and strip control chars so a user
+    // can't inject fake "assistant:" / "system:" directives via newlines.
+    const msgParsed = chatMessageContentSchema.safeParse(body.message);
+    if (!msgParsed.success) {
+      return new Response(
+        JSON.stringify({
+          error: msgParsed.error.issues[0]?.message ?? "Invalid message",
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    const message = msgParsed.data;
+
+    // Body-size guard (via readJson above) already bounds payload. We don't
+    // fully validate trip shape here because in-flight edits can include
+    // partially-populated trips from older localStorage entries.
+    if (body.trip == null || typeof body.trip !== "object") {
+      return new Response(
+        JSON.stringify({ error: "Trip data is required" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    const trip = body.trip;
+
+    const history = body.history;
 
     const systemPrompt = `You are Roamly's trip planning assistant. The user has an existing itinerary and wants to modify or ask questions about it. You have two modes:
 

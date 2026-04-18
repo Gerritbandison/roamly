@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest } from "next/server";
-import { toggleFavorite, getFavorites } from "@/lib/db/queries";
+import { toggleFavorite, getFavorites, userOwnsTrip } from "@/lib/db/queries";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -24,6 +24,11 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
   }
 
   const { id } = await ctx.params;
+
+  if (!(await userOwnsTrip(id, userId))) {
+    return Response.json({ error: "Trip not found" }, { status: 404 });
+  }
+
   const { type, name, dayNumber, note } = (await req.json()) as {
     type: string;
     name: string;
@@ -31,18 +36,31 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     note?: string;
   };
 
-  if (!type || !name || typeof dayNumber !== "number") {
+  if (
+    typeof type !== "string" ||
+    !["place", "food"].includes(type) ||
+    typeof name !== "string" ||
+    name.length === 0 ||
+    name.length > 200 ||
+    typeof dayNumber !== "number" ||
+    !Number.isInteger(dayNumber) ||
+    dayNumber < 1 ||
+    dayNumber > 30
+  ) {
     return Response.json(
-      { error: "type, name, and dayNumber are required" },
+      { error: "Invalid favorite payload" },
       { status: 400 }
     );
   }
+
+  const safeNote =
+    typeof note === "string" && note.length <= 1000 ? note : undefined;
 
   const result = await toggleFavorite(id, userId, {
     type,
     name,
     dayNumber,
-    note,
+    note: safeNote,
   });
   return Response.json(result);
 }

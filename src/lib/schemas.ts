@@ -114,3 +114,46 @@ export const chatMessageSchema = z.object({
 });
 
 export const chatHistorySchema = z.array(chatMessageSchema).max(20);
+
+// ── AI input validation ────────────────────────────────────────────────
+// User-supplied strings that end up interpolated into Claude prompts.
+// Cap length to bound token spend and strip control characters so crafted
+// input can't smuggle fake "system" directives via newlines.
+
+function stripControl(s: string) {
+  // Removes C0 controls except \n\r\t; removes C1 controls and BOM.
+  return s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\uFEFF]/g, "");
+}
+
+export const chatMessageContentSchema = z
+  .string()
+  .trim()
+  .min(1, "Message is empty")
+  .max(2000, "Message is too long")
+  .transform(stripControl);
+
+export const interestsSchema = z
+  .string()
+  .trim()
+  .max(500, "Interests text is too long")
+  .transform(stripControl)
+  .optional();
+
+// `modifier` for /api/regenerate-day is user-provided but should be a short
+// word-ish hint ("budget", "luxury", "relaxed", "foodie", ...). Whitelist
+// the shape rather than the exact values to stay flexible.
+export const modifierSchema = z
+  .string()
+  .trim()
+  .max(40, "Modifier is too long")
+  .regex(/^[\p{L}\p{N}\s-]*$/u, "Modifier contains unsupported characters")
+  .optional();
+
+// Email subject-line destination must not contain newlines (header injection)
+// and should be limited to reasonable punctuation.
+export const emailDestinationSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(100)
+  .regex(/^[^\r\n\t\x00-\x1F\x7F]+$/u, "Destination contains unsupported characters");

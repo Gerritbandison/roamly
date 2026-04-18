@@ -7,6 +7,8 @@ import {
   UsageCheckUnavailableError,
 } from "@/lib/usage";
 import { env } from "@/lib/env";
+import { modifierSchema } from "@/lib/schemas";
+import { readJson, BODY_LIMITS, PayloadTooLargeError } from "@/lib/reqGuard";
 
 function getClient() {
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -38,15 +40,54 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const body = await req.json();
-    const { trip, dayNumber, modifier } = body;
-
-    if (!trip || !dayNumber) {
+    let body: { trip?: unknown; dayNumber?: unknown; modifier?: unknown };
+    try {
+      body = await readJson(req, BODY_LIMITS.medium);
+    } catch (err) {
+      if (err instanceof PayloadTooLargeError) {
+        return new Response(
+          JSON.stringify({ error: "Payload too large" }),
+          { status: 413, headers: { "Content-Type": "application/json" } }
+        );
+      }
       return new Response(
-        JSON.stringify({ error: "Trip data and day number are required" }),
+        JSON.stringify({ error: "Invalid JSON" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
+    const { trip } = body as { trip: { destination: string; duration_days: number; days: Array<{ day: number; date: string; theme: string; morning: string; evening: string }> } };
+
+    if (!trip || typeof trip !== "object" || !Array.isArray(trip.days)) {
+      return new Response(
+        JSON.stringify({ error: "Trip data is required" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    // Validate dayNumber — bounds-check against actual trip length so a
+    // caller can't force regeneration for day 999 of a 5-day trip.
+    if (
+      typeof body.dayNumber !== "number" ||
+      !Number.isInteger(body.dayNumber) ||
+      body.dayNumber < 1 ||
+      body.dayNumber > (trip.duration_days ?? 30)
+    ) {
+      return new Response(
+        JSON.stringify({ error: "Invalid dayNumber" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    const dayNumber = body.dayNumber;
+
+    // Validate modifier — whitelist shape/length to prevent prompt injection.
+    const modifierParsed = modifierSchema.safeParse(body.modifier ?? undefined);
+    if (!modifierParsed.success) {
+      return new Response(
+        JSON.stringify({ error: "Invalid modifier" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    const modifier = modifierParsed.data;
 
     const currentDay = trip.days.find(
       (d: { day: number }) => d.day === dayNumber

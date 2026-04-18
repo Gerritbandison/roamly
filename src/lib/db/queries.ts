@@ -204,6 +204,24 @@ export async function revokeShareLink(tripId: string, userId: string) {
   return true;
 }
 
+/**
+ * Returns true if the given user owns the given trip. Use before any write
+ * that references trip_id from a URL parameter so callers can't pollute
+ * another user's trip (IDOR defense on sub-resources like notes, favorites,
+ * and packing lists).
+ */
+export async function userOwnsTrip(
+  tripId: string,
+  userId: string
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: trips.id })
+    .from(trips)
+    .where(and(eq(trips.id, tripId), eq(trips.userId, userId)))
+    .limit(1);
+  return !!row;
+}
+
 // ── Notes ──────────────────────────────────────────────
 
 export async function upsertNote(
