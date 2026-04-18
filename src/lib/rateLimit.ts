@@ -50,12 +50,16 @@ async function rateLimitUpstash(
   // INCR the counter. On the first hit the key didn't exist, so INCR returns
   // 1 — that's when we set the TTL. Subsequent hits just increment.
   const count = await upstash<number>(["INCR", key]);
-  if (count === 1) {
+  const pttl = await upstash<number>(["PTTL", key]);
+
+  // Recover from orphans: if the key exists but has no TTL (PTTL === -1),
+  // the process died between INCR and EXPIRE on a previous first-hit. Without
+  // recovery, the key — and all its accumulated counts — would live forever,
+  // permanently over-limiting the caller.
+  if (count === 1 || pttl === -1) {
     await upstash<string>(["EXPIRE", key, ttlSeconds]);
   }
 
-  // Read the remaining TTL so callers can expose an accurate resetAt.
-  const pttl = await upstash<number>(["PTTL", key]);
   const resetAt = Date.now() + (pttl > 0 ? pttl : windowMs);
 
   if (count > limit) {

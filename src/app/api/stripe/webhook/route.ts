@@ -35,25 +35,12 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Invalid webhook" }, { status: 400 });
   }
 
-  // Idempotency: if we've already processed this event id, ack and return.
-  // Stripe will retry on non-2xx, so we want duplicates to no-op with 200.
-  let firstTime: boolean;
-  try {
-    firstTime = await claimStripeEvent(event.id, event.type);
-  } catch (err) {
-    log.error("stripe_event_claim_error", {
-      eventId: event.id,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    // DB down — return 500 so Stripe retries.
-    return Response.json({ error: "Temporary failure" }, { status: 500 });
-  }
-
-  if (!firstTime) {
-    log.info("stripe_webhook_duplicate", { eventId: event.id, type: event.type });
-    return Response.json({ received: true, duplicate: true });
-  }
-
+  // Idempotency strategy: run the handler FIRST, then claim the event id.
+  // Handlers are idempotent single-statement UPDATEs, so a Stripe retry that
+  // re-runs a handler is safe. Claiming after ensures that a transient handler
+  // failure returns 500 → Stripe retries → the event is eventually applied.
+  // (The previous claim-first approach silently dropped events on any handler
+  // error, since retries hit the claim row and skipped the handler.)
   try {
     switch (event.type) {
       case "checkout.session.completed": {
@@ -90,11 +77,27 @@ export async function POST(req: NextRequest) {
       type: event.type,
       error: err instanceof Error ? err.message : String(err),
     });
-    // Let Stripe retry. Note: claimStripeEvent already inserted the id, so on
-    // retry we'd see `duplicate: true` and skip. For now, accept at-most-once
-    // semantics here — losing a subscription state change is better than
-    // flipping a user twice. (Revisit if this becomes an issue.)
     return Response.json({ error: "Handler error" }, { status: 500 });
+  }
+
+  // Record the event so future redeliveries no-op via ON CONFLICT. If this
+  // fails, return 500 and let Stripe retry — the handler is idempotent, so
+  // re-running it on the next delivery is safe.
+  try {
+    const firstTime = await claimStripeEvent(event.id, event.type);
+    if (!firstTime) {
+      log.info("stripe_webhook_redelivery", {
+        eventId: event.id,
+        type: event.type,
+      });
+      return Response.json({ received: true, duplicate: true });
+    }
+  } catch (err) {
+    log.error("stripe_event_claim_error", {
+      eventId: event.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return Response.json({ error: "Temporary failure" }, { status: 500 });
   }
 
   return Response.json({ received: true });
